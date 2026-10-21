@@ -141,6 +141,8 @@ let matchTime = 0;
 
 const cam = { x: S.WORLD / 2, y: S.WORLD / 2 };
 let camFocus = null;        // player object or me
+// read-only hook for browser tests
+window.__fl = { get me() { return me; }, get you() { return you; }, get mode() { return mode; }, get tracers() { return tracers; }, get live() { return matchLive; } };
 let specId = null;
 
 // fx
@@ -233,12 +235,12 @@ function handle(m) {
       else { mode = 'spec'; show(null); hudVisible(true); toast('Match in progress — spectating. Next match soon!'); }
       break;
     }
-    case 'lobby': updateLobby(m); break;
-    case 'start': onStart(m); break;
+    case 'lobby': matchLive = false; updateLobby(m); break;
+    case 'start': matchLive = false; onStart(m); break;
     case 'snap': onSnap(m); break;
     case 'you': onYou(m); break;
     case 'ev': onEv(m); break;
-    case 'end': onEnd(m); break;
+    case 'end': matchLive = false; onEnd(m); break;
     case 'lpos': onLpos(m); break;
   }
 }
@@ -332,6 +334,7 @@ function dmgNum(x, y, n, color) {
 function onEv(e) {
   switch (e.k) {
     case 'shot': {
+      if (e.id === myId) break;   // our own shot was already drawn by predictShot
       const w = S.WEAPONS[e.w];
       tracers.push({ x: e.x, y: e.y, a: e.a, wi: e.w, sp: w.speed, t: 0, life: w.range / w.speed });
       sfx.shot(e.w, e.x, e.y);
@@ -438,7 +441,7 @@ function onEv(e) {
     case 'busStart': sfx.horn(); banner('BATTLE BUS INCOMING', '#7fb8ff', 2.4); break;
     case 'jump': if (e.id === myId) sfx.whoosh(); break;
     case 'land': if (e.id === myId) onLand(e); break;
-    case 'live': banner('MATCH LIVE', '#ffd76e', 1.8); break;
+    case 'live': matchLive = true; banner('MATCH LIVE', '#ffd76e', 1.8); break;
   }
 }
 
@@ -810,7 +813,7 @@ addEventListener('blur', () => { keys.clear(); mouse.fire = false; });
 canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener('mousedown', e => {
   audio();
-  if (e.button === 0 && mode === 'play') { mouse.fire = true; sendInput(true); }
+  if (e.button === 0 && mode === 'play') { mouse.fire = true; tapPending = true; sendInput(true); }
 });
 addEventListener('mouseup', e => { if (e.button === 0) { mouse.fire = false; sendInput(true); } });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -853,7 +856,7 @@ function sendInput(force) {
   if (!onIsland && !(mode === 'play' && me)) return;
   if (!ws || ws.readyState !== 1) return;
   const now = performance.now();
-  if (!force && now - lastInputSend < 45) return;
+  if (!force && now - lastInputSend < 25) return;
   lastInputSend = now;
   const [mx, my] = inputAxes();
   if (onIsland) { send({ t: 'input', x: mx, y: my, aim: lme.aim }); return; }
@@ -864,6 +867,29 @@ function sendInput(force) {
 // ============================================================
 //  Prediction & spectate
 // ============================================================
+// Local shot preview: draw our own shot the moment we fire, instead of
+// waiting a full round trip for the server's shot event.
+let localFireCd = 0;
+let matchLive = false;
+let tapPending = false;  // a click that started and ended between two frames still counts   // the server only accepts fire once the match is live
+function predictShot(dt) {
+  if (localFireCd > 0) localFireCd -= dt;
+  const want = mouse.fire || tapPending;
+  tapPending = false;
+  if (!matchLive || !want || !you || !you.slots || you.reload > 0) return;
+  const s = you.slots[you.sel];
+  if (!s || s.k !== 'w' || s.mag <= 0 || localFireCd > 0) return;
+  const w = S.WEAPONS[s.w];
+  localFireCd = w.rof;
+  s.mag--;   // server snapshot corrects this on its next update
+  const x = me.x + Math.cos(me.aim) * 30, y = me.y + Math.sin(me.aim) * 30;
+  tracers.push({ x, y, a: me.aim, wi: s.w, sp: w.speed, t: 0, life: w.range / w.speed });
+  sfx.shot(s.w, x, y);
+  addParts(x, y, 5, '#ffe37a', 170, 0.12, 3.5);
+  addParts(x, y, 2, '#fff3c0', 60, 0.08, 5);
+  kicks.set(myId, 0.12);
+  shake(s.w === 4 ? 3.2 : s.w === 2 ? 2.4 : 1.1); kickT = 0.16;
+}
 function predictSelf(dt) {
   if (!me) return;
   // aim from mouse
@@ -879,11 +905,14 @@ function predictSelf(dt) {
     const [nx, ny] = S.moveCircle(me.x, me.y, S.PLAYER_R, vx * dt, vy * dt, world);
     me.x = nx; me.y = ny;
   }
+  predictShot(dt);
   // reconcile
   const dx = me.serverX - me.x, dy = me.serverY - me.y;
   const d = Math.hypot(dx, dy);
-  if (d > 110) { me.x = me.serverX; me.y = me.serverY; }
-  else { me.x += dx * 0.12; me.y += dy * 0.12; }
+  // The server is always a little behind (network delay), so small gaps are normal.
+  // Ignore them so standing still stays still; only fix real desyncs, gently.
+  if (d > 160) { me.x = me.serverX; me.y = me.serverY; }
+  else if (d > 40) { const k = (d - 40) / d * 0.15; me.x += dx * k; me.y += dy * k; }
 }
 function predictLobby(dt) {
   if (!lme) return;

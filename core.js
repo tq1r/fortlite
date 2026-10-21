@@ -1312,7 +1312,9 @@ function processPlayer(p, dt) {
   p.aim = inp.aim;
 
   // firing / building / pickaxe
-  if (inp.fire && G.state === 'active') {
+  const wantFire = inp.fire || inp.firePulse;
+  inp.firePulse = false;
+  if (wantFire && G.state === 'active') {
     if (inp.build) tryPlaceWall(p);
     else if (p.sel === 0) pickaxeSwing(p);
     else {
@@ -1539,6 +1541,7 @@ function acceptSocket(conn) {
         i.my = S.clamp(+msg.y || 0, -1, 1);
         i.aim = +msg.aim || 0;
         i.fire = !!msg.f;
+        if (msg.f) i.firePulse = true;   // a quick tap must not be lost between ticks
         i.build = !!msg.b;
         break;
       }
