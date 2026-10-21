@@ -1,0 +1,8 @@
+Gun sprites: "2D Guns" by Kay Lousberg (kaylousberg.itch.io / opengameart.org/content/2d-guns)
+License: CC0 1.0 Universal (public domain). No attribution required.
+Files were cropped and downscaled from the @2x PNG set:
+  pistol.png  <- pistol2.png
+  smg.png     <- smg2.png
+  shotgun.png <- shotgun.png
+  ar.png      <- assaultrifle.png
+  sniper.png  <- sniper.png

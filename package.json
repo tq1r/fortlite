@@ -1,0 +1,14 @@
+{
+  "name": "fortlite",
+  "version": "1.0.0",
+  "description": "Fortlite — 2D top-down battle royale with Fortnite-style building. Solo & Duo modes. Zero dependencies — just run `node server.js`.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js && node test-gameplay.js && node test-bus.js && node test-client.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}

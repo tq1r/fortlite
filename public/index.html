@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Fortlite — Loot. Build. Outlast.</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23131808'/><polygon points='58,8 26,58 44,58 36,92 76,40 54,40' fill='%23ffd23a'/></svg>">
+</head>
+<body>
+<canvas id="game"></canvas>
+<canvas id="minimap" width="176" height="176"></canvas>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="stormBar"><span class="stormLbl">FADE</span><span id="stormTxt">—</span></div>
+
+  <div id="topRightInfo">
+    <div class="trBox"><span id="aliveNum">0</span><label>ALIVE</label></div>
+    <div class="trBox"><span id="killsNum">0</span><label>ELIMS</label></div>
+  </div>
+  <div id="killfeed"></div>
+
+  <div id="dropHint" class="hidden"></div>
+
+  <div id="bottomCenter">
+    <div id="useBar" class="hidden"><div id="useFill"></div><span id="useTxt">Using…</span></div>
+    <div id="shieldBar"><div id="shieldFill"></div><span id="shieldTxt">0</span></div>
+    <div id="hpBar"><div id="hpFill"></div><span id="hpTxt">100</span></div>
+    <div id="slots"></div>
+    <div id="buildHint" class="hidden">BUILD: <b id="buildMatTxt">WOOD</b> <span class="dim">(Z/X/C to switch)</span></div>
+  </div>
+
+  <div id="bottomRight">
+    <div id="ammoBox" class="hidden"><span id="ammoMag">0</span><span class="ammoSep">/</span><span id="ammoRes">0</span><label id="ammoType">LIGHT</label></div>
+    <div id="mats">
+      <div class="mat" id="mat-wood"><span class="matDot wood"></span><b id="matN-wood">0</b></div>
+      <div class="mat" id="mat-stone"><span class="matDot stone"></span><b id="matN-stone">0</b></div>
+      <div class="mat" id="mat-metal"><span class="matDot metal"></span><b id="matN-metal">0</b></div>
+    </div>
+  </div>
+</div>
+
+<div id="banner" class="hidden"></div>
+<div id="toasts"></div>
+
+<!-- ============ SPECTATE BAR ============ -->
+<div id="specBar" class="hidden">
+  <button id="specPrev">&#8249;</button>
+  <span>SPECTATING <b id="specName">?</b></span>
+  <button id="specNext">&#8250;</button>
+</div>
+
+<!-- ============ MENU ============ -->
+<div id="menu" class="overlay">
+  <div class="menuLogo">
+    <div class="logoRow">
+      <svg class="bolt" viewBox="0 0 28 40" aria-hidden="true"><polygon points="19,1 3,24 11,24 8,39 25,15 16,15" fill="#ffd23a" stroke="#0e1206" stroke-width="2" stroke-linejoin="round"/></svg>
+      <h1 class="logo">FORT<span class="lite">LITE</span></h1>
+    </div>
+    <div class="tagline">LOOT &middot; BUILD &middot; OUTLAST</div>
+  </div>
+
+  <div class="menuDropdowns">
+    <div class="mDrop">Region: Auto</div>
+    <div class="mDrop" id="qualityBtn">Quality: High</div>
+  </div>
+
+  <div class="menuLeft">
+    <button class="navBtn" id="navProfile"><span>Profile</span></button>
+    <button class="navBtn" id="navCosmetics"><span>Cosmetics</span></button>
+    <button class="navBtn" id="navFriends"><span>Friends</span></button>
+    <button class="navBtn" id="navLeaders"><span>Leaderboards</span></button>
+  </div>
+
+  <div class="menuCenter">
+    <div id="skinPreview">
+      <div class="charShadow"></div>
+      <div class="charGun"></div>
+      <div class="charBody"></div>
+      <div class="charHand h1"></div>
+      <div class="charHand h2"></div>
+    </div>
+
+    <div class="nickWrap">
+      <input id="nameInput" maxlength="16" placeholder="Set Your Nickname" autocomplete="off" spellcheck="false">
+    </div>
+
+    <h3 class="chooseHdr">CHOOSE A GAME MODE</h3>
+    <div class="modeRow">
+      <button id="soloBtn" class="modeBtn solo"><span class="modeIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.5" r="4.2" fill="currentColor"/><path d="M3.5 21.5c0-4.7 3.8-8.5 8.5-8.5s8.5 3.8 8.5 8.5z" fill="currentColor"/></svg></span>SOLO</button>
+      <button id="duoBtn" class="modeBtn duo"><span class="modeIcon"><svg viewBox="0 0 30 24" aria-hidden="true"><circle cx="8.5" cy="6" r="4" fill="currentColor"/><path d="M.8 21.5C.8 17 4.4 13.4 8.5 13.4S16.2 17 16.2 21.5z" fill="currentColor"/><circle cx="20.5" cy="7" r="3.4" fill="currentColor" opacity="0.7"/><path d="M15.2 21.5c.7-3.6 3.3-6.2 6.6-6.4 3.2.3 5.6 2.8 6 6.4z" fill="currentColor" opacity="0.7"/></svg></span>DUO</button>
+    </div>
+
+    <div id="menuStatus"></div>
+    <div class="controls">
+      <div><b>WASD</b> move</div><div><b>Mouse</b> aim</div><div><b>LMB</b> shoot / swing / place</div>
+      <div><b>E</b> open chest / grab</div><div><b>Q</b> build mode</div><div><b>Z X C</b> wood / stone / metal</div>
+      <div><b>1-5</b> slots</div><div><b>R</b> reload</div><div><b>G</b> drop</div><div><b>M</b> mute</div>
+    </div>
+  </div>
+
+  <div class="menuSeason">
+    <div class="seasonName">SEASON 1</div>
+    <div class="seasonSub" id="seasonSub">Rookie</div>
+    <div class="xpBar"><div id="xpFill"></div></div>
+    <div class="xpLabel" id="xpLabel">0 XP</div>
+  </div>
+
+  <div class="menuFooter">
+    <span class="copy">FORTLITE</span>
+    <a class="fakeLink" data-msg="It's all fun and games — go take the Victory Royale!">Terms of Use</a>
+    <a class="fakeLink" data-msg="We only store your nickname in your own browser.">Privacy Policy</a>
+  </div>
+</div>
+
+<!-- ============ PROFILE ============ -->
+<div id="profilePanel" class="overlay hidden">
+  <div class="panel profilePanel">
+    <h2 class="lobbyTitle">PROFILE</h2>
+    <div class="profileName" id="profileName">Player</div>
+    <div class="profStats">
+      <div><b id="stMatches">0</b><label>MATCHES</label></div>
+      <div><b id="stWins">0</b><label>WINS</label></div>
+      <div><b id="stKills">0</b><label>ELIMS</label></div>
+      <div><b id="stBest">#—</b><label>BEST</label></div>
+    </div>
+    <div class="lobbyBtns"><button id="profileClose">Back</button></div>
+  </div>
+</div>
+
+<!-- ============ LOBBY ============ -->
+<div id="lobby" class="overlay hidden">
+  <div class="panel lobbyPanel">
+    <div id="lobbyMode" class="lobbyModeTag">SOLO</div>
+    <h2 class="lobbyTitle">MATCH STARTING</h2>
+    <div id="lobbyCountdown">15</div>
+    <div id="teamRow" class="teamRow"></div>
+    <div id="lobbyPlayers"></div>
+    <div class="lobbyBtns">
+      <button id="inviteBtn">Copy invite link</button>
+    </div>
+    <div class="tip" id="lobbyTip">Walk the spawn island while the bus loads. Press SPACE over the map to jump, then steer onto a POI!</div>
+  </div>
+</div>
+
+<!-- ============ DEATH ============ -->
+<div id="death" class="overlay hidden">
+  <div class="panel deathPanel">
+    <h2 class="deathTitle">ELIMINATED</h2>
+    <div id="deathBy">by The Fade</div>
+    <div class="deathStats">
+      <div><b id="deathPlace">#12</b><label>PLACED</label></div>
+      <div><b id="deathKills">0</b><label>ELIMS</label></div>
+    </div>
+    <div class="lobbyBtns">
+      <button id="specBtn">Spectate</button>
+    </div>
+    <div class="tip">Next match starts automatically — invite friends with the link in the lobby!</div>
+  </div>
+</div>
+
+<!-- ============ END / WIN ============ -->
+<div id="end" class="overlay hidden">
+  <div class="panel endPanel">
+    <h2 id="endTitle">VICTORY ROYALE</h2>
+    <div id="endWinner">Team Blue wins!</div>
+    <table id="endBoard"></table>
+    <div class="tip">Next match starting soon…</div>
+  </div>
+</div>
+
+<!-- ============ DISCONNECT ============ -->
+<div id="disc" class="overlay hidden">
+  <div class="panel">
+    <h2>CONNECTION LOST</h2>
+    <button id="reconnectBtn" class="big">Reconnect</button>
+  </div>
+</div>
+
+<script src="/shared.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
