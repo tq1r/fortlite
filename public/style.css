@@ -418,7 +418,19 @@ button.big { font-size: 18px; padding: 12px 28px; }
 }
 #pauseMenu .pmBtn:hover { background: #36443c; }
 #pauseMenu .pmBtn.danger { color: #ff8a80; border-color: #7a3a36; }
-#pauseMenu .pmSoon { margin-top: auto; font-size: 11px; color: #8a9a8f; }
+#pauseMenu .pmSec { margin-top: 8px; font-size: 11px; font-weight: 900; letter-spacing: 1.5px; color: #8a9a8f; }
+#pauseMenu .pmSquad { display: flex; flex-direction: column; gap: 4px; }
+#pauseMenu .pmSquad div { display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(255,255,255,0.05); border-left: 3px solid #888; border-radius: 4px; }
+#pauseMenu .pmSquad .out { color: #8a9a8f; text-decoration: line-through; }
+#pauseMenu .pmSquad .empty { color: #8a9a8f; font-size: 12px; background: none; border: 0; padding: 2px 0; }
+#pauseMenu .pmAcct { font-size: 12px; color: #b9c7b4; margin-bottom: 4px; }
+/* outfit picker in the account panel */
+#acctPanel .outfitRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#acctPanel .outfitBtn { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; font-size: 12px; }
+#acctPanel .outfitBtn .sw { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.25); }
+#acctPanel .outfitBtn.on { border-color: #ffd76e; }
+#acctPanel .outfitBtn.lock { opacity: 0.45; cursor: not-allowed; }
+#acctPanel .outfitBtn small { font-size: 10px; color: #93a390; font-weight: 600; }
 
 /* soft edge darkening over the play field (static, cheap) */
 .fx-vignette {
@@ -427,7 +439,7 @@ button.big { font-size: 18px; padding: 12px 28px; }
 }
 
 /* accounts panel */
-#acctPanel { z-index: 60; }
+#acctPanel { z-index: 600; }
 #acctPanel.hidden { display: none; }
 #acctPanel .acctCard {
   width: min(420px, 92vw); background: #141c16; border: 1px solid #3a4a3e; border-radius: 10px;

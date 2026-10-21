@@ -154,8 +154,10 @@ Everything lives in `shared.js`:
 
 ## Roadmap
 
-Cosmetics and skins, more weapons, rifts and jump pads, squad mode (4s),
-persistent leaderboards. The bot API is intentionally simple so new
-behaviors are easy to bolt on.
+Accounts, friends, leaderboards and outfits are in (the Cloudflare Worker
+keeps them in an Accounts Durable Object). Next: more outfits and cosmetic
+slots, more weapons, rifts and jump pads, squad mode (4s) with a real party
+that spans matches. The bot API is intentionally simple so new behaviors are
+easy to bolt on.
 
 Have fun — and watch out for SweatyPete.

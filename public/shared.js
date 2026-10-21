@@ -293,6 +293,17 @@
     return true;
   };
 
+  // Cosmetic outfits: the body colour of a player. Unlocked by account stats (see worker/index.js).
+  // Index 0 is always free. Keep the order stable: the index is what travels over the wire.
+  S.OUTFITS = [
+    { id: 'scout',   name: 'Scout',   color: '#557a62', unlock: null },
+    { id: 'moss',    name: 'Moss',    color: '#7a9a3a', unlock: { stat: 'wins', min: 1 } },
+    { id: 'ember',   name: 'Ember',   color: '#c4572b', unlock: { stat: 'matches', min: 3 } },
+    { id: 'glacier', name: 'Glacier', color: '#3e8fbf', unlock: { stat: 'kills', min: 10 } },
+    { id: 'violet',  name: 'Violet',  color: '#7b4ea3', unlock: { stat: 'kills', min: 50 } },
+    { id: 'gold',    name: 'Gold',    color: '#d9a92b', unlock: { stat: 'wins', min: 5 } },
+  ];
+
   // export for node & browser
   if (typeof module !== 'undefined' && module.exports) module.exports = S;
   if (typeof window !== 'undefined') window.S = S;

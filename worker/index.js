@@ -3,6 +3,7 @@
 //   /api/*     -> accounts, friends, leaderboard (Accounts Durable Object, SQLite)
 //   everything else is the page in public/
 import { createGame } from '../core.js';
+import S from '../shared.js';   // S.OUTFITS: the cosmetic table (unlock rules live there)
 
 const ACCOUNTS_ID = 'main';          // one accounts store for everyone
 const PBKDF2_ITERATIONS = 100000;    // the most Workers' Web Crypto allows
@@ -119,6 +120,9 @@ export class Accounts {
         token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created INTEGER NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS friends (
         user_id INTEGER NOT NULL, friend_id INTEGER NOT NULL, PRIMARY KEY (user_id, friend_id))`);
+      // cosmetics: the chosen outfit index (added after launch, so check the columns first)
+      const cols = this.sql.exec('PRAGMA table_info(users)').toArray().map(c => c.name);
+      if (!cols.includes('outfit')) this.sql.exec('ALTER TABLE users ADD COLUMN outfit INTEGER NOT NULL DEFAULT 0');
     });
   }
 
@@ -133,6 +137,7 @@ export class Accounts {
       if (path === '/api/logout' && method === 'POST') return this.logout(request);
       if (path === '/api/me' && method === 'GET') return this.me(request);
       if (path === '/api/leaderboard' && method === 'GET') return this.leaderboard();
+      if (path === '/api/outfit' && method === 'POST') return this.setOutfit(request, await request.json());
       if (path === '/api/friends' && method === 'GET') return this.friends(request);
       if (path === '/api/friends/add' && method === 'POST') return this.friendChange(request, await request.json(), true);
       if (path === '/api/friends/remove' && method === 'POST') return this.friendChange(request, await request.json(), false);
@@ -169,8 +174,17 @@ export class Accounts {
     return this.one('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', token);
   }
 
+  // an outfit is unlocked when the account's stat reaches the table's minimum (index 0 is always free)
+  outfitUnlocked(u, idx) {
+    const o = S.OUTFITS[idx];
+    if (!o) return false;
+    if (!o.unlock) return true;
+    return (u[o.unlock.stat] || 0) >= o.unlock.min;
+  }
+
   statsOf(u) {
-    return { name: u.name, matches: u.matches, wins: u.wins, kills: u.kills, best: u.best };
+    const unlocked = S.OUTFITS.map((_, i) => i).filter(i => this.outfitUnlocked(u, i));
+    return { name: u.name, matches: u.matches, wins: u.wins, kills: u.kills, best: u.best, outfit: u.outfit || 0, unlocked };
   }
 
   // ---- routes ----
@@ -194,6 +208,16 @@ export class Accounts {
     // same message for unknown name and wrong password
     if (!u || (await this.hash(password, u.salt)) !== u.hash) return json({ error: 'Wrong name or password' }, 401);
     return json({ token: this.newSession(u.id), ...this.statsOf(u) });
+  }
+
+  setOutfit(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    const idx = Number(body.outfit);
+    if (!Number.isInteger(idx) || !S.OUTFITS[idx]) return json({ error: 'Unknown outfit' }, 400);
+    if (!this.outfitUnlocked(u, idx)) return json({ error: 'That outfit is locked' }, 403);
+    this.sql.exec('UPDATE users SET outfit = ? WHERE id = ?', idx, u.id);
+    return json(this.statsOf({ ...u, outfit: idx }));
   }
 
   logout(request) {

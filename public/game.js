@@ -137,6 +137,8 @@ let me = null;              // predicted self {x,y,aim,serverX,serverY}
 let you = null;             // private state from server
 let storm = null;           // {x,y,r,nx,ny,nr,ph,sh,dps,t}
 let aliveCount = 0;
+let snapAlive = new Set();  // ids alive in the latest snapshot (squad list)
+let rosterNow = [];        // match roster from the start message (id, name, team, bot)
 let matchTime = 0;
 
 const cam = { x: S.WORLD / 2, y: S.WORLD / 2 };
@@ -213,7 +215,7 @@ function connect() {
   try { ws = new WebSocket(url); } catch (e) { setStatus('WebSocket unavailable'); return; }
   ws.onopen = () => {
     wsReady = true;
-    ws.send(JSON.stringify({ t: 'hello', name: connectedName, token: localStorage.getItem(TOKEN_KEY) || '' }));
+    ws.send(JSON.stringify({ t: 'hello', name: connectedName, token: localStorage.getItem(TOKEN_KEY) || '', outfit: acct ? (acct.outfit || 0) : 0 }));
     send({ t: 'mode', m: myModeChoice });
     setStatus('Connected! Waiting for server…');
   };
@@ -248,6 +250,7 @@ function handle(m) {
 }
 
 function onStart(m) {
+  rosterNow = m.players || [];
   const w = m.world;
   world.size = w.size; world.grid = w.grid;
   world.obstacles = w.obstacles.map(o => ({ id: o.i, type: o.ty, x: o.x, y: o.y, r: o.r, hp: o.hp, maxHp: o.mhp }));
@@ -302,7 +305,7 @@ function onSnap(m) {
     p.buf.push({ t: now, x: a[1], y: a[2], a: a[3] });
     if (p.buf.length > 30) p.buf.shift();
     p.hp = a[4]; p.shield = a[5]; p.team = a[6]; p.wv = a[7]; p.kills = a[10];
-    p.ph = a[11] || 0; p.alt = (a[12] || 0) / 100;
+    p.ph = a[11] || 0; p.alt = (a[12] || 0) / 100; p.outfit = a[13] || 0;
     if (id === myId && me) { me.serverX = a[1]; me.serverY = a[2]; me.ph = p.ph; me.alt = p.alt; }
   }
   if (m.bus) {
@@ -311,6 +314,7 @@ function onSnap(m) {
   } else busBuf.length = 0;
   // dead players: drop their interpolation buffers so they stop rendering
   for (const [id, p] of players) if (!seen.has(id) && id !== myId) p.buf.length = 0;
+  snapAlive = seen;
 }
 
 function onYou(m) {
@@ -561,8 +565,35 @@ function togglePause(force) {
   pauseOpen = (typeof force === 'boolean') ? force : !pauseOpen;
   $('pauseMenu').classList.toggle('hidden', !pauseOpen);
   $('pauseMute').textContent = muted ? 'Sound on' : 'Mute sound';
+  if (pauseOpen) renderPause();
   keys.clear(); mouse.fire = false;
 }
+// Esc side menu: squad (duo partner), account line, and match actions
+function renderPause() {
+  const box = $('pmSquad');
+  box.innerHTML = '';
+  const addRow = (name, state, color, out) => {
+    const row = document.createElement('div');
+    row.style.borderLeftColor = color;
+    const n = document.createElement('span'); n.textContent = name;
+    const st = document.createElement('span'); st.textContent = state;
+    if (out) n.className = st.className = 'out';
+    row.append(n, st); box.append(row);
+  };
+  const myTeam = (players.get(myId) || {}).team || 0;
+  const alive = (id) => (!matchLive && !snapAlive.size) || snapAlive.has(id);
+  const mates = myTeam > 0 ? rosterNow.filter(p => p.id !== myId && p.team === myTeam) : [];
+  addRow((acct ? acct.name : (connectedName || 'You')) + ' (you)', alive(myId) ? 'alive' : 'out', S.TEAMS[myTeam] ? S.TEAMS[myTeam].color : '#888', !alive(myId));
+  if (!mates.length) {
+    const e = document.createElement('div'); e.className = 'empty';
+    e.textContent = myTeam > 0 ? 'Squad mate not in this match' : 'Solo: no squad mates';
+    box.append(e);
+  }
+  for (const m of mates) addRow(m.name, alive(m.id) ? 'alive' : 'out', S.TEAMS[myTeam].color, !alive(m.id));
+  $('pmAcct').textContent = acct ? 'Signed in as ' + acct.name : 'Playing as guest. Sign in to keep stats and unlock outfits.';
+}
+$('pmInvite').onclick = () => $('inviteBtn').click();
+$('pmAccount').onclick = () => { togglePause(false); openAcct('account'); };
 function leaveMatch() {
   pauseOpen = false;
   $('pauseMenu').classList.add('hidden');
@@ -1367,7 +1398,8 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   const sw = swings.get(p.id);
   if (sw != null) swing = 1 - sw / 0.3;
 
-  FLArt.player(g, x, y, teamCol, p.id);
+  FLArt.player(g, x, y, S.OUTFITS[p.outfit || 0].color, p.id);
+  if (teamCol) { g.strokeStyle = teamCol; g.lineWidth = 3; g.beginPath(); g.arc(x, y, S.PLAYER_R + 3, 0, TAU); g.stroke(); }
 
     // weapon + hands (over body, rotated toward aim)
   g.save();
@@ -1854,15 +1886,54 @@ function renderAcct() {
     $('acMatches').textContent = acct.matches; $('acWins').textContent = acct.wins;
     $('acKills').textContent = acct.kills; $('acBest').textContent = acct.best ? '#' + acct.best : '#-';
     nameInput.value = acct.name; nameInput.readOnly = true;
+    renderOutfits();
     if (!$('friendList').children.length) setMsg('friendMsg', '');
   } else {
     nameInput.readOnly = false;
   }
   if (!on && !$('friendList').children.length) setMsg('friendMsg', 'Log in to add friends.');
 }
+// cosmetics: outfit picker (the server enforces the unlocks too)
+const UNLOCK_WORDS = { wins: ['win', 'wins'], matches: ['match', 'matches'], kills: ['elim', 'elims'] };
+function unlockText(o) {
+  if (!o.unlock) return '';
+  const w = UNLOCK_WORDS[o.unlock.stat];
+  return 'Locked: ' + o.unlock.min + ' ' + (o.unlock.min === 1 ? w[0] : w[1]);
+}
+function renderOutfits() {
+  const row = $('outfitRow');
+  row.innerHTML = '';
+  const cur = acct ? (acct.outfit || 0) : 0;
+  const unlocked = acct && acct.unlocked ? acct.unlocked : [0];
+  S.OUTFITS.forEach((o, i) => {
+    const ok = unlocked.includes(i);
+    const b = document.createElement('button');
+    b.className = 'outfitBtn' + (i === cur ? ' on' : '') + (ok ? '' : ' lock');
+    const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = o.color;
+    const nm = document.createElement('span'); nm.textContent = o.name;
+    const hint = document.createElement('small');
+    hint.textContent = ok ? (i === cur ? 'Equipped' : 'Equip') : unlockText(o);
+    b.append(sw, nm, hint);
+    b.onclick = () => equipOutfit(i, ok);
+    row.append(b);
+  });
+  // the menu avatar shows the equipped outfit
+  const body = document.querySelector('.charBody');
+  if (body) body.style.background = 'radial-gradient(circle at 38% 32%, rgba(255,255,255,0.35), ' + S.OUTFITS[cur].color + ' 62%, #111 100%)';
+}
+async function equipOutfit(i, ok) {
+  if (!acct) return;
+  if (!ok) { setMsg('outfitMsg', unlockText(S.OUTFITS[i]) + '.', true); return; }
+  const r = await api('/api/outfit', { outfit: i });
+  if (!r.ok) { setMsg('outfitMsg', r.data.error || 'Could not change outfit.', true); return; }
+  acct = r.data;
+  setMsg('outfitMsg', S.OUTFITS[i].name + ' equipped. It shows from your next match.');
+  renderOutfits();
+}
 function signIn(data) {
   localStorage.setItem(TOKEN_KEY, data.token);
-  acct = { name: data.name, matches: data.matches, wins: data.wins, kills: data.kills, best: data.best };
+  const { token: _token, ...rest } = data;
+  acct = rest;
   $('authPass').value = '';
   setMsg('authMsg', 'Signed in as ' + data.name);
   renderAcct();
@@ -1887,7 +1958,11 @@ $('logoutBtn').onclick = async () => {
   setMsg('authMsg', 'Logged out.');
   renderAcct();
 };
-$('acctClose').onclick = () => show('menu');
+$('acctClose').onclick = () => {
+  if (mode === 'menu') { show('menu'); return; }
+  $('acctPanel').classList.add('hidden');   // opened from the Esc menu: go back to it
+  togglePause(true);
+};
 document.querySelectorAll('.acctTab').forEach(b => b.onclick = () => acctTab(b.dataset.tab));
 
 async function loadMe() {

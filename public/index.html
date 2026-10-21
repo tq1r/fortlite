@@ -56,10 +56,16 @@
 
 <div id="pauseMenu" class="hidden">
   <div class="pmHead"><span>MENU</span><span class="dim">ESC to close</span></div>
+  <div class="pmSec">SQUAD</div>
+  <div id="pmSquad" class="pmSquad"></div>
+  <button id="pmInvite" class="pmBtn">Copy invite link</button>
+  <div class="pmSec">ACCOUNT</div>
+  <div id="pmAcct" class="pmAcct">Playing as guest</div>
+  <button id="pmAccount" class="pmBtn">Account, friends and outfits</button>
+  <div class="pmSec">MATCH</div>
   <button id="pauseResume" class="pmBtn">Resume</button>
   <button id="pauseMute" class="pmBtn">Mute sound</button>
   <button id="pauseLeave" class="pmBtn danger">Leave match</button>
-  <div class="pmSoon">Party, friends, accounts and leaderboards: coming soon</div>
 </div>
 <div id="banner" class="hidden"></div>
 <div id="toasts"></div>
@@ -175,6 +181,9 @@
           <div><b id="acKills">0</b><label>ELIMS</label></div>
           <div><b id="acBest">#-</b><label>BEST</label></div>
         </div>
+        <div class="acctHint">Outfit: unlocks as you play. Your outfit shows on the battlefield.</div>
+        <div id="outfitRow" class="outfitRow"></div>
+        <div class="acctMsg" id="outfitMsg"></div>
         <div class="acctRow"><button id="logoutBtn">Log out</button></div>
       </div>
       <div class="acctMsg" id="authMsg"></div>

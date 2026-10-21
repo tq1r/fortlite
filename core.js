@@ -279,9 +279,14 @@ function spawnLoot(x, y, def) {
 // ============================================================
 //  Players / clients
 // ============================================================
+function clampOutfit(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n < S.OUTFITS.length ? n : 0;
+}
+
 function makePlayer(id, name, team, isBot) {
   return {
-    id, name, team, bot: isBot,
+    id, name, team, bot: isBot, outfit: 0,
     client: null,
     x: 0, y: 0, aim: 0,
     input: { mx: 0, my: 0, aim: 0, fire: false, build: false },
@@ -511,7 +516,7 @@ function startMatch() {
   // humans
   for (const c of humans) {
     const p = makePlayer(c.id, c.name, c.team, false);
-    p.client = c; c.player = p;
+    p.client = c; c.player = p; p.outfit = c.outfit || 0;
     G.players.push(p);
   }
   // bots (paired up in duo)
@@ -1367,7 +1372,7 @@ function buildSnapshot() {
       p.id, Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10,
       Math.round(p.aim * 100) / 100, Math.round(p.hp), Math.round(p.shield),
       p.team, wv, (Math.abs(p.input.mx) + Math.abs(p.input.my)) > 0.1 ? 1 : 0,
-      p.useT > 0 ? 1 : 0, p.kills, p.ph, Math.round(p.alt * 100),
+      p.useT > 0 ? 1 : 0, p.kills, p.ph, Math.round(p.alt * 100), p.outfit,
     ]);
   }
   const st = G.storm;
@@ -1499,6 +1504,7 @@ function acceptSocket(conn) {
         client = {
           id: nextEntityId++, ws: conn, name: sanitizeName(msg.name),
           token: typeof msg.token === 'string' ? msg.token.slice(0, 80) : '',
+          outfit: clampOutfit(msg.outfit),
           team: 0, modeChoice: 'solo', player: null,
           lx: S.ISLAND.x, ly: S.ISLAND.y, la: 0, li: null,
         };
