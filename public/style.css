@@ -419,3 +419,9 @@ button.big { font-size: 18px; padding: 12px 28px; }
 #pauseMenu .pmBtn:hover { background: #36443c; }
 #pauseMenu .pmBtn.danger { color: #ff8a80; border-color: #7a3a36; }
 #pauseMenu .pmSoon { margin-top: auto; font-size: 11px; color: #8a9a8f; }
+
+/* soft edge darkening over the play field (static, cheap) */
+.fx-vignette {
+  position: fixed; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(8,12,8,0.5) 100%);
+}

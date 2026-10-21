@@ -41,6 +41,7 @@ const ctxProxy = () => new Proxy({}, {
   get(t, k) {
     if (k === 'createPattern' || k === 'createRadialGradient' || k === 'createLinearGradient') return () => ({ addColorStop() { } });
     if (k === 'measureText') return () => ({ width: 10 });
+    if (k === 'createImageData') return (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
     if (k === 'canvas') return { width: 100, height: 100 };
     if (typeof t[k] === 'undefined') t[k] = function () { };
     return t[k];
@@ -92,11 +93,13 @@ vm.createContext(sandbox);
 // ---------------- load scripts ----------------
 const sharedSrc = fs.readFileSync(path.join(__dirname, 'shared.js'), 'utf8');
 const gameSrc = fs.readFileSync(path.join(__dirname, 'public', 'game.js'), 'utf8');
+const artSrc = fs.readFileSync(path.join(__dirname, 'public', 'art.js'), 'utf8');
 let failed = 0;
 const ok = (c, l) => { if (c) console.log('  PASS', l); else { failed++; console.log('  FAIL:', l); } };
 
 try {
   vm.runInContext(sharedSrc, sandbox, { filename: 'shared.js' });
+  vm.runInContext(artSrc, sandbox, { filename: 'art.js' });
   vm.runInContext(gameSrc, sandbox, { filename: 'game.js' });
   ok(true, 'game.js loaded without exceptions');
 } catch (e) {

@@ -142,7 +142,7 @@ let matchTime = 0;
 const cam = { x: S.WORLD / 2, y: S.WORLD / 2 };
 let camFocus = null;        // player object or me
 // read-only hook for browser tests
-window.__fl = { get me() { return me; }, get you() { return you; }, get mode() { return mode; }, get tracers() { return tracers; }, get live() { return matchLive; } };
+window.__fl = { get me() { return me; }, get you() { return you; }, get mode() { return mode; }, get tracers() { return tracers; }, get live() { return matchLive; }, get renderMs() { return renderMs; } };
 let specId = null;
 
 // fx
@@ -167,7 +167,9 @@ let baseScale = 1, camZoom = 1;   // camZoom widens the view while the bus flies
 //  Canvas sizing
 // ============================================================
 function resize() {
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  // pixel density costs GPU time on every frame: cap it (Low quality uses 1)
+  const lowQ = localStorage.getItem('fl_low') === '1';
+  dpr = Math.min(lowQ ? 1 : 1.5, window.devicePixelRatio || 1);
   vw = innerWidth; vh = innerHeight;
   canvas.width = vw * dpr; canvas.height = vh * dpr;
   canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
@@ -256,6 +258,7 @@ function onStart(m) {
   world.floors = w.floors;
   world.stormCfg = w.storm;
   world.pois = w.pois || [];
+  FLArt.reset(world);
   storm = null; aliveCount = m.players.length; matchTime = 0;
   players.clear(); tracers.length = 0; dmgNums.length = 0; parts.length = 0; swings.clear();
   buildMode = false; specId = null;
@@ -1014,6 +1017,8 @@ function drawHand(g, hx, hy) {
   g.beginPath(); g.arc(hx, hy, 6.5, 0, TAU); g.stroke();
 }
 
+let bushList = [];
+let renderMs = 0;   // smoothed time spent drawing one frame (shown by the browser test)
 function render(now, rt) {
   const g = ctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
@@ -1028,6 +1033,7 @@ function render(now, rt) {
   const halfW = vw / 2 / scale, halfH = vh / 2 / scale;
   const viewL = cam.x - halfW, viewR = cam.x + halfW, viewT = cam.y - halfH, viewB = cam.y + halfH;
   const inView = (x, y, r) => x + r > viewL && x - r < viewR && y + r > viewT && y - r < viewB;
+  bushList = world.obstacles.filter(o => o.type === 'bush' && inView(o.x, o.y, o.r + 40));
 
   if (mode === 'lobby') {
     drawSpawnIsland(g, now, viewL, viewR, viewT, viewB);
@@ -1036,8 +1042,7 @@ function render(now, rt) {
   }
 
   // ground
-  g.fillStyle = grassPat;
-  g.fillRect(Math.max(0, viewL), Math.max(0, viewT), Math.min(world.size, viewR) - Math.max(0, viewL), Math.min(world.size, viewB) - Math.max(0, viewT));
+  FLArt.drawGround(g, Math.max(0, viewL), Math.max(0, viewT), Math.min(world.size, viewR), Math.min(world.size, viewB));
   // out-of-map darkness
   g.fillStyle = '#12190f';
   if (viewL < 0) g.fillRect(viewL, viewT, -viewL, viewB - viewT);
@@ -1045,43 +1050,8 @@ function render(now, rt) {
   if (viewT < 0) g.fillRect(Math.max(0, viewL), viewT, Math.min(world.size, viewR) - Math.max(0, viewL), -viewT);
   if (viewB > world.size) g.fillRect(Math.max(0, viewL), world.size, Math.min(world.size, viewR) - Math.max(0, viewL), viewB - world.size);
 
-  // water (two passes: rim color first, deep fill on top → merged lakes with rims only on the outside)
-  let hasWater = false;
-  for (const o of world.obstacles) {
-    if (o.type !== 'water') continue;
-    if (inView(o.x, o.y, o.r + 12)) { hasWater = true; break; }
-  }
-  if (hasWater) {
-    g.fillStyle = '#2f9bd8';
-    for (const o of world.obstacles) {
-      if (o.type !== 'water' || !inView(o.x, o.y, o.r + 12)) continue;
-      g.beginPath(); g.arc(o.x, o.y, o.r + 5, 0, TAU); g.fill();
-    }
-    g.fillStyle = '#1d70b3';
-    for (const o of world.obstacles) {
-      if (o.type !== 'water' || !inView(o.x, o.y, o.r + 12)) continue;
-      g.beginPath(); g.arc(o.x, o.y, o.r, 0, TAU); g.fill();
-    }
-    g.strokeStyle = 'rgba(120, 200, 240, 0.35)'; g.lineWidth = 2;
-    for (const o of world.obstacles) {
-      if (o.type !== 'water' || !inView(o.x, o.y, o.r + 12)) continue;
-      g.beginPath(); g.moveTo(o.x - o.r * 0.4, o.y - o.r * 0.15); g.lineTo(o.x - o.r * 0.05, o.y - o.r * 0.15); g.stroke();
-    }
-  }
-
   // floors
-  for (const f of world.floors) {
-    if (!inView(f.x + f.w / 2, f.y + f.h / 2, Math.max(f.w, f.h))) continue;
-    g.fillStyle = f.mat === 'wood' ? '#8a6a44' : f.mat === 'stone' ? '#7d8288' : '#5c6875';
-    g.fillRect(f.x, f.y, f.w, f.h);
-    g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 2;
-    g.strokeRect(f.x + 1, f.y + 1, f.w - 2, f.h - 2);
-    g.strokeStyle = 'rgba(0,0,0,0.08)';
-    g.beginPath();
-    for (let x = f.x + S.GRID; x < f.x + f.w; x += S.GRID) { g.moveTo(x, f.y); g.lineTo(x, f.y + f.h); }
-    for (let y = f.y + S.GRID; y < f.y + f.h; y += S.GRID) { g.moveTo(f.x, y); g.lineTo(f.x + f.w, y); }
-    g.stroke();
-  }
+  FLArt.floors(g, world.floors);
 
   drawPOIs(g, now);
 
@@ -1105,71 +1075,30 @@ function render(now, rt) {
     drawChest(g, c, now);
   }
 
-  // rocks, crates
+  // rocks and supply crates
   for (const o of world.obstacles) {
-    if (o.type === 'tree' || o.type === 'bush' || o.type === 'water') continue;
+    if (o.type !== 'rock' && o.type !== 'crate') continue;
     if (!inView(o.x, o.y, o.r + 10)) continue;
-    if (o.type === 'rock') {
-      g.fillStyle = '#d0d2c6';
-      g.beginPath(); g.arc(o.x, o.y, o.r, 0, TAU); g.fill();
-      g.fillStyle = '#e6e8de';
-      g.beginPath(); g.arc(o.x - o.r * 0.28, o.y - o.r * 0.3, o.r * 0.52, 0, TAU); g.fill();
-      g.fillStyle = '#b2b4aa';
-      g.beginPath(); g.arc(o.x + o.r * 0.3, o.y + o.r * 0.25, o.r * 0.2, 0, TAU); g.fill();
-      g.beginPath(); g.arc(o.x - o.r * 0.1, o.y + o.r * 0.4, o.r * 0.13, 0, TAU); g.fill();
-      g.strokeStyle = '#8f9188'; g.lineWidth = 3;
-      g.beginPath(); g.arc(o.x, o.y, o.r, 0, TAU); g.stroke();
-    } else if (o.type === 'crate') {
-      g.fillStyle = '#5f6d7e'; g.fillRect(o.x - o.r, o.y - o.r, o.r * 2, o.r * 2);
-      g.strokeStyle = '#45505e'; g.lineWidth = 3;
-      g.strokeRect(o.x - o.r, o.y - o.r, o.r * 2, o.r * 2);
-      g.beginPath(); g.moveTo(o.x - o.r, o.y - o.r); g.lineTo(o.x + o.r, o.y + o.r);
-      g.moveTo(o.x + o.r, o.y - o.r); g.lineTo(o.x - o.r, o.y + o.r); g.stroke();
-    }
-    // damage indicator
+    if (o.type === 'rock') FLArt.rock(g, o); else FLArt.crate(g, o);
     if (o.hp < o.maxHp) {
       g.fillStyle = 'rgba(0,0,0,' + (0.35 * (1 - o.hp / o.maxHp)) + ')';
       g.beginPath(); g.arc(o.x, o.y, o.r, 0, TAU); g.fill();
     }
   }
-  // tree trunks
+  // tree shadows (canopies are drawn over the players)
   for (const o of world.obstacles) {
     if (o.type !== 'tree') continue;
     if (!inView(o.x, o.y, o.r + 10)) continue;
-    g.fillStyle = '#8a6a44';
-    g.beginPath(); g.arc(o.x, o.y, o.r * 0.55, 0, TAU); g.fill();
-    g.strokeStyle = '#6b4e2e'; g.lineWidth = 3;
-    g.beginPath(); g.arc(o.x, o.y, o.r * 0.55, 0, TAU); g.stroke();
+    FLArt.treeShadow(g, o);
   }
 
   // walls
   for (const w of world.walls.values()) {
     const x = w.gx * S.GRID, y = w.gy * S.GRID;
     if (!inView(x + 30, y + 30, 60)) continue;
-    const c = S.MAT_COLOR[w.mat];
-    g.fillStyle = c;
-    g.fillRect(x, y, S.GRID, S.GRID);
-    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2.5;
-    g.strokeRect(x + 1.5, y + 1.5, S.GRID - 3, S.GRID - 3);
-    // texture lines
-    g.strokeStyle = 'rgba(0,0,0,0.15)'; g.lineWidth = 1.5;
-    g.beginPath();
-    if (w.mat === 'wood') { g.moveTo(x + 5, y + 20); g.lineTo(x + 55, y + 20); g.moveTo(x + 5, y + 40); g.lineTo(x + 55, y + 40); }
-    else if (w.mat === 'stone') { g.moveTo(x + 20, y + 5); g.lineTo(x + 20, y + 30); g.lineTo(x + 40, y + 30); g.lineTo(x + 40, y + 55); }
-    else { g.moveTo(x + 8, y + 8); g.lineTo(x + 52, y + 52); g.moveTo(x + 52, y + 8); g.lineTo(x + 8, y + 52); }
-    g.stroke();
-    // damage
     const hpf = w.hp / w.maxHp;
-    if (hpf < 0.99) {
-      g.fillStyle = 'rgba(0,0,0,' + (0.4 * (1 - hpf)) + ')';
-      g.fillRect(x, y, S.GRID, S.GRID);
-      if (hpf < 0.5) {
-        g.strokeStyle = 'rgba(20,10,5,0.8)'; g.lineWidth = 2;
-        g.beginPath(); g.moveTo(x + 10, y + 8); g.lineTo(x + 30, y + 30); g.lineTo(x + 18, y + 52);
-        if (hpf < 0.25) { g.moveTo(x + 50, y + 10); g.lineTo(x + 32, y + 34); g.lineTo(x + 48, y + 50); }
-        g.stroke();
-      }
-    }
+    const stage = hpf < 0.25 ? 3 : hpf < 0.5 ? 2 : hpf < 0.75 ? 1 : 0;
+    FLArt.wall(g, x, y, w.mat, stage);
   }
 
   // players
@@ -1187,32 +1116,15 @@ function render(now, rt) {
   for (const o of world.obstacles) {
     if (o.type !== 'tree') continue;
     if (!inView(o.x, o.y, o.r + 40)) continue;
-    let alpha = 0.88;
+    let alpha = 0.92;
     if (focus) {
       const fd = Math.hypot(focus.x - o.x, focus.y - o.y);
-      if (fd < o.r + 26) alpha = 0.32;
+      if (fd < o.r + 26) alpha = 0.34;
     }
-    g.globalAlpha = alpha;
-    const R = o.r * 1.75;
-    const grad = g.createRadialGradient(o.x - R * 0.25, o.y - R * 0.3, R * 0.2, o.x, o.y, R);
-    grad.addColorStop(0, '#7ca452'); grad.addColorStop(1, '#4c6e2e');
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(o.x, o.y, R, 0, TAU); g.fill();
-    g.globalAlpha = 1;
+    FLArt.treeCanopy(g, o, alpha);
   }
   // bushes (over players)
-  for (const o of world.obstacles) {
-    if (o.type !== 'bush') continue;
-    if (!inView(o.x, o.y, o.r + 10)) continue;
-    g.globalAlpha = 0.88;
-    g.fillStyle = '#4f7a36';
-    g.beginPath();
-    g.arc(o.x - o.r * 0.45, o.y - o.r * 0.2, o.r * 0.65, 0, TAU);
-    g.arc(o.x + o.r * 0.45, o.y - o.r * 0.25, o.r * 0.6, 0, TAU);
-    g.arc(o.x, o.y + o.r * 0.3, o.r * 0.7, 0, TAU);
-    g.fill();
-    g.globalAlpha = 1;
-  }
+  for (const o of bushList) FLArt.bush(g, o);
 
   drawBus(g, rt);
 
@@ -1250,7 +1162,7 @@ function render(now, rt) {
 
   // storm overlay
   if (storm) {
-    g.fillStyle = 'rgba(108, 44, 168, 0.34)';
+    g.fillStyle = FLArt.stormPattern(g);
     g.beginPath();
     g.rect(viewL - 50, viewT - 50, (viewR - viewL) + 100, (viewB - viewT) + 100);
     g.arc(storm.x, storm.y, storm.r, 0, TAU, true);
@@ -1415,8 +1327,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   // bush hiding (ground only)
   let alpha = 1;
   if (!air && mode !== 'lobby') {
-    for (const o of world.obstacles) {
-      if (o.type !== 'bush') continue;
+    for (const o of bushList) {
       const dx = o.x - x, dy = o.y - y;
       if (dx * dx + dy * dy < 40 * 40) { alpha = 0.45; break; }
     }
@@ -1456,23 +1367,9 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   const sw = swings.get(p.id);
   if (sw != null) swing = 1 - sw / 0.3;
 
-  // body (peach circle, Zombs-style)
-  const bodyGrad = g.createRadialGradient(x - 7, y - 8, 4, x, y, S.PLAYER_R + 2);
-  bodyGrad.addColorStop(0, '#f8d494');
-  bodyGrad.addColorStop(0.55, '#f2c078');
-  bodyGrad.addColorStop(1, '#e0aa5e');
-  g.fillStyle = bodyGrad;
-  g.beginPath(); g.arc(x, y, S.PLAYER_R, 0, TAU); g.fill();
-  g.strokeStyle = '#b5834a'; g.lineWidth = 3;
-  g.beginPath(); g.arc(x, y, S.PLAYER_R, 0, TAU); g.stroke();
+  FLArt.player(g, x, y, teamCol, p.id);
 
-  // team ring
-  if (teamCol) {
-    g.strokeStyle = teamCol; g.lineWidth = 3;
-    g.beginPath(); g.arc(x, y, S.PLAYER_R + 5, 0, TAU); g.stroke();
-  }
-
-  // weapon + hands (over body, rotated toward aim)
+    // weapon + hands (over body, rotated toward aim)
   g.save();
   g.translate(x, y);
   g.rotate(aim);
@@ -1780,7 +1677,7 @@ function frame() {
   let dt = (now - lastFrame) / 1000;
   lastFrame = now;
   if (dt > 0.1) dt = 0.1;
-  const rt = now - 120; // render time for interpolation
+  const rt = now - 100; // render time for interpolation (about two snapshots behind)
 
   // decay fx
   vignette = Math.max(0, vignette - dt * 2.5);
@@ -1853,7 +1750,9 @@ function frame() {
   // input send
   sendInput(false);
 
+  const renderT0 = performance.now();
   render(now, rt);
+  renderMs = renderMs * 0.9 + (performance.now() - renderT0) * 0.1;
   renderMinimap();
 }
 requestAnimationFrame(frame);
@@ -1874,6 +1773,7 @@ updateQualityBtn();
 $('qualityBtn').onclick = () => {
   lowFx = !lowFx;
   localStorage.setItem('fl_low', lowFx ? '1' : '0');
+  resize();
   updateQualityBtn();
   toast(lowFx ? 'Low quality — fewer effects' : 'High quality — full effects');
 };
