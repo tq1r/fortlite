@@ -846,8 +846,11 @@ function predictSelf(dt) {
   if (me.ph !== S.PH.ground) return;   // bus / skydive: follow the server
   const [mx, my] = inputAxes();
   const speed = S.SPEED * (you && you.use > 0 ? S.SPEED_USE : 1);
-  if (mx || my) {
-    const [nx, ny] = S.moveCircle(me.x, me.y, S.PLAYER_R, mx * speed * dt, my * speed * dt, world);
+  // same acceleration model as the server (shared.js stepVel)
+  const [vx, vy] = S.stepVel(me.vx || 0, me.vy || 0, mx * speed, my * speed, dt);
+  me.vx = vx; me.vy = vy;
+  if (vx || vy) {
+    const [nx, ny] = S.moveCircle(me.x, me.y, S.PLAYER_R, vx * dt, vy * dt, world);
     me.x = nx; me.y = ny;
   }
   // reconcile

@@ -11,7 +11,9 @@
   S.GRID = 60;               // wall grid cell size
   S.CELLS = S.WORLD / S.GRID;
   S.PLAYER_R = 20;
-  S.SPEED = 250;             // px/sec
+  S.SPEED = 250;             // px/sec (top speed)
+  S.ACCEL = 1700;            // px/sec^2 speeding up toward the input direction
+  S.DECEL = 2200;            // px/sec^2 slowing down when input stops
   S.SPEED_USE = 0.5;         // movement multiplier while using consumable
   S.START_HP = 100;
   S.START_SHIELD = 0;
@@ -212,6 +214,17 @@
       if (!moved) break;
     }
     return [x, y];
+  };
+
+  // Step a velocity (vx, vy) toward a target velocity with limited acceleration.
+  // Used by the server and by client prediction, so both move the same way.
+  S.stepVel = function (vx, vy, tx, ty, dt) {
+    const dx = tx - vx, dy = ty - vy;
+    const d = Math.hypot(dx, dy);
+    const rate = (tx || ty) ? S.ACCEL : S.DECEL;
+    const maxd = rate * dt;
+    if (d <= maxd || d === 0) return [tx, ty];
+    return [vx + dx / d * maxd, vy + dy / d * maxd];
   };
 
   // Move a circle with velocity, then resolve. Returns [x, y].

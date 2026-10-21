@@ -295,7 +295,7 @@ function makePlayer(id, name, team, isBot) {
     lastShotT: -99, lastDmgT: -99,
     ai: isBot ? newBotAI() : null,
     stuckT: 0, lastX: 0, lastY: 0,
-    ph: S.PH.ground, fallT: 0, alt: 0, fallVx: 0, fallVy: 0,
+    ph: S.PH.ground, fallT: 0, alt: 0, fallVx: 0, fallVy: 0, vx: 0, vy: 0,
   };
 }
 function newBotAI() {
@@ -1302,8 +1302,11 @@ function processPlayer(p, dt) {
   let mx = inp.mx, my = inp.my;
   const mag = Math.hypot(mx, my);
   if (mag > 1) { mx /= mag; my /= mag; }
-  if (mag > 0.01) {
-    const [nx, ny] = S.moveCircle(p.x, p.y, S.PLAYER_R, mx * sp * dt, my * sp * dt, world);
+  // accelerate / decelerate toward the input direction, then move by the resulting velocity
+  const [vx, vy] = S.stepVel(p.vx || 0, p.vy || 0, mx * sp, my * sp, dt);
+  p.vx = vx; p.vy = vy;
+  if (vx || vy) {
+    const [nx, ny] = S.moveCircle(p.x, p.y, S.PLAYER_R, vx * dt, vy * dt, world);
     p.x = nx; p.y = ny;
   }
   p.aim = inp.aim;
