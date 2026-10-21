@@ -535,6 +535,7 @@ function confetti() {
 // ============================================================
 function show(id) {
   for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'profilePanel']) $(o).classList.add('hidden');
+  $('pauseMenu').classList.add('hidden'); pauseOpen = false;
   if (id) $(id).classList.remove('hidden');
 }
 function hudVisible(v) {
@@ -546,6 +547,29 @@ function hudVisible(v) {
   $('specBar').classList.toggle('hidden', !specId);
 }
 function setStatus(s) { $('menuStatus').textContent = s; }
+
+// Esc side menu (in a match or the lobby)
+let pauseOpen = false;
+function togglePause(force) {
+  if (mode === 'menu') return;
+  pauseOpen = (typeof force === 'boolean') ? force : !pauseOpen;
+  $('pauseMenu').classList.toggle('hidden', !pauseOpen);
+  $('pauseMute').textContent = muted ? 'Sound on' : 'Mute sound';
+  keys.clear(); mouse.fire = false;
+}
+function leaveMatch() {
+  pauseOpen = false;
+  $('pauseMenu').classList.add('hidden');
+  const old = ws;
+  ws = null; wsReady = false;
+  if (old) { old.onclose = null; old.onmessage = null; try { old.close(); } catch (_) { /* already closed */ } }
+  mode = 'menu';
+  show('menu');
+  setStatus('Left the match. Pick a mode to play again.');
+}
+$('pauseResume').onclick = () => togglePause(false);
+$('pauseMute').onclick = () => { muted = !muted; $('pauseMute').textContent = muted ? 'Sound on' : 'Mute sound'; };
+$('pauseLeave').onclick = () => leaveMatch();
 function banner(text, color, secs) {
   const b = $('banner');
   b.textContent = text;
@@ -749,6 +773,8 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const c = e.code;
   if (mode === 'menu' && c === 'Enter') { $('soloBtn').click(); return; }
+  if (c === 'Escape') { togglePause(); return; }
+  if (pauseOpen) return;
   keys.add(c);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(c)) e.preventDefault();
   audio();

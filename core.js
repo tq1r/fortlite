@@ -1406,6 +1406,9 @@ function tick() {
         if (humans.length === 0 && G.matchTime > 3) {
           const t = new Set(); for (const p of G.players) if (p.alive) t.add(effTeam(p));
           endMatch(t.size ? [...t][0] : null);
+        } else if (G.matchTime > 3 && G.players.some(p => !p.bot) && !G.players.some(p => !p.bot && p.alive)) {
+          // every human is out: the round is over even if bots are still standing
+          endMatch(null);
         } else if (G.aliveCount <= 1 || G.matchTime > 60 * 12) {
           const t = new Set(); for (const p of G.players) if (p.alive) t.add(effTeam(p));
           endMatch(t.size ? [...t][0] : null);

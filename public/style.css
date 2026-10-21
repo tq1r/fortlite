@@ -401,3 +401,21 @@ button.big { font-size: 18px; padding: 12px 28px; }
   background: #2b3530; border: 1px solid #4a5a50; border-bottom-width: 2px; border-radius: 4px;
   font: 700 10px/1.2 "Segoe UI", sans-serif; color: #ffd23a; white-space: nowrap;
 }
+
+/* Esc side menu */
+#pauseMenu {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 300px; z-index: 500;
+  background: rgb(12, 18, 14); border-left: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 22px 18px; display: flex; flex-direction: column; gap: 10px;
+  font: 600 14px "Segoe UI", sans-serif; color: #dfe7d8;
+}
+#pauseMenu.hidden { display: none; }
+#pauseMenu .pmHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 18px; font-weight: 900; letter-spacing: 1px; }
+#pauseMenu .dim { font-size: 11px; font-weight: 600; color: #8a9a8f; }
+#pauseMenu .pmBtn {
+  background: #2b3530; color: #f2f5ef; border: 1px solid #4a5a50; border-radius: 6px;
+  padding: 10px 12px; font: 700 14px "Segoe UI", sans-serif; text-align: left; cursor: pointer;
+}
+#pauseMenu .pmBtn:hover { background: #36443c; }
+#pauseMenu .pmBtn.danger { color: #ff8a80; border-color: #7a3a36; }
+#pauseMenu .pmSoon { margin-top: auto; font-size: 11px; color: #8a9a8f; }
