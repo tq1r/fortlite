@@ -238,12 +238,19 @@ async function main() {
   // ---- 3. LOOT WEAPON ----
   const pA3 = posOf(A, wa.id);
   let wLoot = null, bdW = 1e9;
+  // only items with a clear straight walk (the bot walker does not path around lakes)
+  const blocked = (a, b) => obstacles.some(o => {
+    if (o.ty === 'bush') return false;
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((o.x - a.x) * dx + (o.y - a.y) * dy) / len2));
+    return Math.hypot(a.x + dx * t - o.x, a.y + dy * t - o.y) < o.r + 26;
+  });
   for (const l of lootItems) {
     if (l.k !== 'weapon') continue;
     const d = Math.hypot(l.x - pA3.x, l.y - pA3.y);
-    if (d < bdW) { bdW = d; wLoot = l; }
+    if (d < bdW && !blocked(pA3, l)) { bdW = d; wLoot = l; }
   }
-  console.log(`  … walking to ${S.WEAPONS[wLoot.w].name} @${wLoot.x},${wLoot.y} (${Math.round(bd)}px)`);
+  console.log(`  … walking to ${S.WEAPONS[wLoot.w].name} @${wLoot.x},${wLoot.y} (${Math.round(bdW)}px)`);
   await moveToward(A, wa.id, wLoot.x, wLoot.y, 20);
   await sleep(300);
   const youW = await A.wait(m => m.t === 'you' && m.slots.some(s => s && s.k === 'w'), 5000);

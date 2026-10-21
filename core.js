@@ -133,6 +133,8 @@ function genMap(seed) {
     ['Rustwater Yard', 'industrial'], ['Gull Point Light', 'coast'], ['Thornwick Farm', 'farm'],
     ['Cinder Hollow', 'quarry'], ['Lantern Market', 'town'], ['Hightower Depot', 'town'],
     ['Mossgate Ruins', 'ruins'], ['Fogbank Harbor', 'coast'],
+    ['Saltmarsh Works', 'industrial'], ['Ironbark Lodge', 'farm'], ['Brightwell Station', 'town'],
+    ['Old Kiln Row', 'ruins'], ['Tallreed Mill', 'farm'], ['Eastwind Depot', 'industrial'],
   ];
   for (let i = POI_POOL.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -173,7 +175,7 @@ function genMap(seed) {
   }
 
   // ---- water lakes (avoid buildings) ----
-  const nLakes = 4 + Math.floor(rand() * 3);
+  const nLakes = Math.round((4 + Math.floor(rand() * 3)) * (W / 3000) ** 2);
   let lakeTries = 0;
   for (let l = 0; l < nLakes && lakeTries < 60; l++) {
     lakeTries++;
@@ -204,13 +206,15 @@ function genMap(seed) {
       addObs(type, x, y, r, hp, mat); placed++;
     }
   };
-  scatter('tree', 85, 26, 200, 'wood', true);
-  scatter('rock', 40, 30, 250, 'stone', false);
-  scatter('crate', 16, 26, 250, 'metal', false);
-  scatter('bush', 42, 30, 999, null, true);
+  // counts scale with the map area so the density stays the same as the old 3000 map
+  const AREA = (W / 3000) ** 2;
+  scatter('tree', Math.round(85 * AREA), 26, 200, 'wood', true);
+  scatter('rock', Math.round(40 * AREA), 30, 250, 'stone', false);
+  scatter('crate', Math.round(16 * AREA), 26, 250, 'metal', false);
+  scatter('bush', Math.round(42 * AREA), 30, 999, null, true);
 
   // open-field chests
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < Math.round(16 * (W / 3000) ** 2); i++) {
     let tries = 0;
     while (tries++ < 200) {
       const x = 160 + rand() * (W - 320), y = 160 + rand() * (W - 320);

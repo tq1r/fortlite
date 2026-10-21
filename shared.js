@@ -7,7 +7,7 @@
   const S = {};
 
   // ---- World -------------------------------------------------
-  S.WORLD = 3000;            // world is WORLD x WORLD pixels
+  S.WORLD = 4200;            // world is WORLD x WORLD pixels (about 2x the area of the old 3000 map)
   S.GRID = 60;               // wall grid cell size
   S.CELLS = S.WORLD / S.GRID;
   S.PLAYER_R = 20;
@@ -19,13 +19,13 @@
   S.START_SHIELD = 0;
 
   // ---- Spawn island, Battle Bus, skydive -------------------------
-  S.ISLAND = { x: 1500, y: 1500, r: 560 };   // lobby island (round, ringed by water)
+  S.ISLAND = { x: 2100, y: 2100, r: 560 };   // lobby island (round, ringed by water)
   S.ISLAND_SPEED = 260;                       // walk speed on the island
-  S.BUS = { span: 1750, speed: 290 };         // bus flies from -span to +span through map centre
+  S.BUS = { span: 2350, speed: 330 };         // bus flies from -span to +span through map centre
   S.FALL_TIME = 4.2;                          // seconds of skydive before landing
   S.FALL_SPEED = 230;                         // steering speed while skydiving
   S.FALL_CARRY = 0.45;                        // share of bus velocity carried into the dive
-  S.POI_COUNT = 7;                            // named points of interest per map
+  S.POI_COUNT = 14;                            // named points of interest per map
   // player phases (sent as small ints in snapshots)
   S.PH = { ground: 0, bus: 1, fall: 2 };
 
@@ -85,14 +85,14 @@
 
   // ---- Storm -----------------------------------------------------
   S.STORM = {
-    grace: 22, startR: 2200,
+    grace: 22, startR: 3080,
     phases: [
-      { wait: 18, shrink: 16, r: 1250, dps: 1 },
-      { wait: 14, shrink: 14, r: 780,  dps: 2 },
-      { wait: 12, shrink: 12, r: 470,  dps: 4 },
-      { wait: 10, shrink: 10, r: 270,  dps: 6 },
-      { wait: 9,  shrink: 9,  r: 140,  dps: 8 },
-      { wait: 8,  shrink: 8,  r: 45,   dps: 10 },
+      { wait: 18, shrink: 16, r: 1750, dps: 1 },
+      { wait: 14, shrink: 14, r: 1092, dps: 2 },
+      { wait: 12, shrink: 12, r: 658,  dps: 4 },
+      { wait: 10, shrink: 10, r: 378,  dps: 6 },
+      { wait: 9,  shrink: 9,  r: 196,  dps: 8 },
+      { wait: 8,  shrink: 8,  r: 63,   dps: 10 },
       { wait: 8,  shrink: 10, r: 0,    dps: 12 },
     ],
   };
