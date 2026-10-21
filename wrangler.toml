@@ -1,0 +1,18 @@
+# Fortlite on Cloudflare: one Worker serves the page (public/) and the /ws game socket.
+# The game room is a Durable Object (SQLite-backed, available on the free plan).
+name = "fortlite"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/ws", "/health"]
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "GameRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
