@@ -200,8 +200,11 @@ const grassPat = (() => {
 //  Networking
 // ============================================================
 function connect() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = proto + '//' + location.host + '/ws';
+  // FORTLITE_SERVER (set in config.js) points the page at a separate game server, e.g. "https://my-server.example.com"
+  const base = (window.FORTLITE_SERVER || '').replace(/\/+$/, '');
+  const url = base
+    ? base.replace(/^http/, 'ws') + '/ws'
+    : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
   setStatus('Connecting…');
   try { ws = new WebSocket(url); } catch (e) { setStatus('WebSocket unavailable'); return; }
   ws.onopen = () => {
