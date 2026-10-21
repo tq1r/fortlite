@@ -205,17 +205,25 @@ const grassPat = (() => {
 // ============================================================
 //  Networking
 // ============================================================
-function connect() {
+// a one-time ticket that lets this socket claim the signed-in account (the server checks it)
+async function fetchTicket() {
+  if (!acct) return '';
+  const r = await api('/api/ticket', {});
+  return r.ok ? (r.data.ticket || '') : '';
+}
+async function connect() {
   // FORTLITE_SERVER (set in config.js) points the page at a separate game server, e.g. "https://my-server.example.com"
   const base = (window.FORTLITE_SERVER || '').replace(/\/+$/, '');
-  const url = base
-    ? base.replace(/^http/, 'ws') + '/ws'
-    : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
   setStatus('Connecting…');
+  const ticket = acct ? await fetchTicket() : '';   // guests connect at once (no await)
+  const url = (base
+    ? base.replace(/^http/, 'ws') + '/ws'
+    : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws')
+    + (ticket ? '?k=' + encodeURIComponent(ticket) : '');
   try { ws = new WebSocket(url); } catch (e) { setStatus('WebSocket unavailable'); return; }
   ws.onopen = () => {
     wsReady = true;
-    ws.send(JSON.stringify({ t: 'hello', name: connectedName, token: localStorage.getItem(TOKEN_KEY) || '', outfit: acct ? (acct.outfit || 0) : 0 }));
+    ws.send(JSON.stringify({ t: 'hello', name: connectedName }));
     send({ t: 'mode', m: myModeChoice });
     setStatus('Connected! Waiting for server…');
   };
@@ -452,20 +460,10 @@ function onEv(e) {
   }
 }
 
-function nearestPoi(x, y) {
-  let best = null, bd = 1e9;
-  for (const p of world.pois || []) {
-    const d = Math.hypot(p.x - x, p.y - y);
-    if (d < p.r + 60 && d < bd) { bd = d; best = p; }
-  }
-  return best;
-}
-function onLand(e) {
+function onLand() {
   sfx.land();
   shake(2);
-  const poi = nearestPoi(e.x, e.y);
-  if (poi) banner('Landed: ' + poi.n, '#ffffff', 2.2);
-  else banner('Landed', '#ffffff', 1.2);
+  banner('Landed', '#ffffff', 1.2);
 }
 function onLpos(m) {
   const seen = new Set();
@@ -519,17 +517,6 @@ function onEnd(m) {
   });
   show('end');
   hudVisible(false);
-  // local career stats
-  if (inMatch) {
-    const s = loadStats();
-    s.m++;
-    s.k += (you.kills || 0);
-    if (isWin) s.w++;
-    const myPlace = isWin ? 1 : (you.place || 0);
-    if (myPlace && (!s.b || myPlace < s.b)) s.b = myPlace;
-    saveStats(s);
-    updateSeasonUI();
-  }
 }
 
 function confetti() {
@@ -544,7 +531,7 @@ function confetti() {
 //  UI helpers
 // ============================================================
 function show(id) {
-  for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'profilePanel', 'acctPanel']) $(o).classList.add('hidden');
+  for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'acctPanel']) $(o).classList.add('hidden');
   $('pauseMenu').classList.add('hidden'); pauseOpen = false;
   if (id) $(id).classList.remove('hidden');
 }
@@ -662,9 +649,6 @@ function updateLobby(m) {
   const md = m.mode || 'solo';
   const tag = $('lobbyMode');
   tag.textContent = md.toUpperCase() + ' MODE';
-  tag.style.background = md === 'duo' ? 'rgba(99,147,216,0.2)' : 'rgba(225,169,40,0.15)';
-  tag.style.color = md === 'duo' ? '#8db4f0' : '#f5c95e';
-  tag.style.borderColor = md === 'duo' ? 'rgba(99,147,216,0.5)' : 'rgba(225,169,40,0.5)';
   lobbyInfo = new Map(m.players.map(p => [p.id, p]));
   // sync my team selection
   const mine = m.players.find(p => p.id === myId);
@@ -1084,7 +1068,6 @@ function render(now, rt) {
   // floors
   FLArt.floors(g, world.floors);
 
-  drawPOIs(g, now);
 
   // next storm circle (white)
   if (storm && storm.nr < storm.r - 5) {
@@ -1553,25 +1536,7 @@ function drawSpawnIsland(g, now, viewL, viewR, viewT, viewB) {
   }
 }
 
-function drawPOIs(g, now) {
-  const near = (mode === 'play' && me) ? me : null;
-  const zoomedOut = camZoom < 0.9;
-  for (const p of world.pois || []) {
-    g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 3;
-    g.setLineDash([12, 14]);
-    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.stroke();
-    g.setLineDash([]);
-    const dMe = near ? Math.hypot(near.x - p.x, near.y - p.y) : 1e9;
-    if (!zoomedOut && dMe > p.r + 200) continue;
-    g.font = '900 26px "Segoe UI", sans-serif';
-    g.textAlign = 'center';
-    const tw = g.measureText(p.n).width;
-    g.fillStyle = 'rgba(12, 18, 10, 0.72)';
-    g.fillRect(p.x - tw / 2 - 14, p.y - 22, tw + 28, 38);
-    g.fillStyle = '#ffd76e';
-    g.fillText(p.n, p.x, p.y + 7);
-  }
-}
+// POIs are drawn on the minimap only (buildMinimapStatic), never in the world
 
 // the Battle Bus: stylised, original design (gold/blue livery, Fortlite bolt on the side)
 function drawBus(g, rt) {
@@ -1652,8 +1617,20 @@ function buildMinimapStatic() {
     g.fillStyle = 'rgba(220,220,230,0.5)';
     g.fillRect(w.gx * S.GRID * k, w.gy * S.GRID * k, S.GRID * k, S.GRID * k);
   }
-  g.fillStyle = '#ffd76e';
-  for (const p of world.pois || []) { g.beginPath(); g.arc(p.x * k, p.y * k, 3, 0, TAU); g.fill(); }
+  // POI dots with names: the only place POI names appear
+  g.font = '700 9px "Segoe UI", sans-serif';
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.lineJoin = 'round';
+  for (const p of world.pois || []) {
+    const x = p.x * k, y = p.y * k;
+    g.fillStyle = '#ffd76e'; g.beginPath(); g.arc(x, y, 3, 0, TAU); g.fill();
+    // labels flip to the left of the dot near the right edge so they stay on the minimap
+    const left = x > 118;
+    g.textAlign = left ? 'right' : 'left';
+    const tx = left ? x - 5 : x + 5;
+    g.lineWidth = 3; g.strokeStyle = 'rgba(8,12,8,0.9)'; g.strokeText(p.n, tx, y);
+    g.fillStyle = '#fff1c4'; g.fillText(p.n, tx, y);
+  }
 }
 function renderMinimap() {
   if (!mmStatic) return;
@@ -1810,41 +1787,11 @@ $('qualityBtn').onclick = () => {
   toast(lowFx ? 'Low quality — fewer effects' : 'High quality — full effects');
 };
 
-// ---- local stats ----
-function loadStats() {
-  return {
-    m: +localStorage.getItem('fl_m') || 0,
-    w: +localStorage.getItem('fl_w') || 0,
-    k: +localStorage.getItem('fl_k') || 0,
-    b: +localStorage.getItem('fl_b') || 0,
-  };
-}
-function saveStats(s) {
-  localStorage.setItem('fl_m', s.m); localStorage.setItem('fl_w', s.w);
-  localStorage.setItem('fl_k', s.k); localStorage.setItem('fl_b', s.b);
-}
-const SEASON_TIERS = ['Rookie', 'Scavenger', 'Harvester', 'Builder', 'Gunner', 'Survivor', 'Fade Walker', 'Victory Royale'];
-function updateSeasonUI() {
-  const s = loadStats();
-  const xp = s.w * 500 + s.k * 100;
-  const tier = Math.floor(xp / 1000) + 1;
-  $('xpFill').style.width = ((xp % 1000) / 10) + '%';
-  $('xpLabel').textContent = xp + ' XP • TIER ' + tier;
-  $('seasonSub').textContent = SEASON_TIERS[Math.min(SEASON_TIERS.length - 1, tier - 1)];
-}
-updateSeasonUI();
-function fillProfile() {
-  const s = loadStats();
-  $('profileName').textContent = connectedName || nameInput.value || 'Player';
-  $('stMatches').textContent = s.m;
-  $('stWins').textContent = s.w;
-  $('stKills').textContent = s.k;
-  $('stBest').textContent = s.b ? '#' + s.b : '#—';
-}
 $('navProfile').onclick = () => openAcct('account');
 $('navFriends').onclick = () => openAcct('friends');
 $('navLeaders').onclick = () => openAcct('leaders');
-$('navCosmetics').onclick = () => toast('Cosmetics coming in a future season!');
+$('navCosmetics').onclick = () => openAcct('account');   // outfits live in the account panel
+$('acctTop').onclick = () => openAcct('account');
 
 // ============================================================
 //  Accounts: sign-in, profile, friends, leaderboard (server: /api/*)
@@ -1878,6 +1825,7 @@ function openAcct(tab) {
 }
 function renderAcct() {
   const on = !!acct;
+  $('acctTop').textContent = on ? acct.name : 'Sign in';
   $('authForm').classList.toggle('hidden', on);
   $('authUser').classList.toggle('hidden', !on);
   $('friendAddRow').classList.toggle('hidden', !on);
@@ -1919,7 +1867,7 @@ function renderOutfits() {
   });
   // the menu avatar shows the equipped outfit
   const body = document.querySelector('.charBody');
-  if (body) body.style.background = 'radial-gradient(circle at 38% 32%, rgba(255,255,255,0.35), ' + S.OUTFITS[cur].color + ' 62%, #111 100%)';
+  if (body) body.style.background = S.OUTFITS[cur].color;
 }
 async function equipOutfit(i, ok) {
   if (!acct) return;
@@ -2007,9 +1955,6 @@ async function loadLeaders() {
   });
 }
 loadMe();
-document.querySelectorAll('.fakeLink').forEach(el => {
-  el.onclick = () => toast(el.getAttribute('data-msg') || '');
-});
 
 // ---- queue for a match ----
 function queue(modeChoice) {

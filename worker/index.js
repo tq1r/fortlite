@@ -7,6 +7,7 @@ import S from '../shared.js';   // S.OUTFITS: the cosmetic table (unlock rules l
 
 const ACCOUNTS_ID = 'main';          // one accounts store for everyone
 const PBKDF2_ITERATIONS = 100000;    // the most Workers' Web Crypto allows
+const TICKET_MS = 2 * 60 * 1000;     // a game-connect ticket is good for two minutes
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -44,14 +45,26 @@ export class GameRoom {
   }
 
   async fetch(request) {
+    // ?k=<ticket> comes from /api/ticket (a signed-in browser asks for one just before connecting)
+    const ticket = new URL(request.url).searchParams.get('k') || '';
+    const account = ticket ? await this.redeemTicket(ticket) : null;
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     server.accept();
     const conn = this.wrap(server);
-    this.game.acceptSocket(conn);
+    this.game.acceptSocket(conn, account);
     this.game.start();
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // ticket -> { token, name, outfit } from the accounts store, or null if it is not valid
+  async redeemTicket(ticket) {
+    const stub = this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName(ACCOUNTS_ID));
+    const res = await stub.fetch('https://accounts.internal/internal/ticket', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket }),
+    });
+    return res.ok ? res.json() : null;
   }
 
   // send the human results of a finished match to the accounts store (stats only)
@@ -120,18 +133,28 @@ export class Accounts {
         token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created INTEGER NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS friends (
         user_id INTEGER NOT NULL, friend_id INTEGER NOT NULL, PRIMARY KEY (user_id, friend_id))`);
+      // one-time tickets that let a socket claim a signed-in account (short-lived)
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS tickets (
+        ticket TEXT PRIMARY KEY, token TEXT NOT NULL, created INTEGER NOT NULL)`);
       // cosmetics: the chosen outfit index (added after launch, so check the columns first)
       const cols = this.sql.exec('PRAGMA table_info(users)').toArray().map(c => c.name);
       if (!cols.includes('outfit')) this.sql.exec('ALTER TABLE users ADD COLUMN outfit INTEGER NOT NULL DEFAULT 0');
     });
   }
 
-  async fetch(request) {
+  async fetch(incoming) {
+    // Read any POST body up front, so routes that ignore the body (like /api/ticket) never leave
+    // a request stream unread after the response (the Workers runtime rejects that).
+    const method = incoming.method;
+    const request = method === 'POST'
+      ? new Request(incoming.url, { method, headers: incoming.headers, body: await incoming.text() })
+      : incoming;
     const url = new URL(request.url);
     const path = url.pathname;
-    const method = request.method;
     try {
       if (path === '/internal/match' && method === 'POST') return this.recordMatch(await request.json());
+      if (path === '/internal/ticket' && method === 'POST') return this.redeemTicket(await request.json());
+      if (path === '/api/ticket' && method === 'POST') return this.makeTicket(request);
       if (path === '/api/register' && method === 'POST') return this.register(await request.json());
       if (path === '/api/login' && method === 'POST') return this.login(await request.json());
       if (path === '/api/logout' && method === 'POST') return this.logout(request);
@@ -208,6 +231,28 @@ export class Accounts {
     // same message for unknown name and wrong password
     if (!u || (await this.hash(password, u.salt)) !== u.hash) return json({ error: 'Wrong name or password' }, 401);
     return json({ token: this.newSession(u.id), ...this.statsOf(u) });
+  }
+
+  makeTicket(request) {
+    const auth = request.headers.get('Authorization') || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token || !this.one('SELECT token FROM sessions WHERE token = ?', token)) return json({ error: 'Not signed in' }, 401);
+    const ticket = bytesToHex(crypto.getRandomValues(new Uint8Array(24)));
+    const now = Date.now();
+    this.sql.exec('DELETE FROM tickets WHERE created < ?', now - TICKET_MS);
+    this.sql.exec('INSERT INTO tickets (ticket, token, created) VALUES (?, ?, ?)', ticket, token, now);
+    return json({ ticket });
+  }
+
+  // single use: the ticket is deleted whether or not it is still valid
+  redeemTicket(body) {
+    const ticket = String(body.ticket || '');
+    const row = this.one('SELECT * FROM tickets WHERE ticket = ?', ticket);
+    this.sql.exec('DELETE FROM tickets WHERE ticket = ?', ticket);
+    if (!row || Date.now() - row.created > TICKET_MS) return json({ error: 'Ticket expired' }, 401);
+    const u = this.one('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', row.token);
+    if (!u) return json({ error: 'Signed out' }, 401);
+    return json({ token: row.token, name: u.name, outfit: u.outfit || 0 });
   }
 
   setOutfit(request, body) {

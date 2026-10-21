@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Fortlite — Loot. Build. Outlast.</title>
+<title>Fortlite</title>
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23131808'/><polygon points='58,8 26,58 44,58 36,92 76,40 54,40' fill='%23ffd23a'/></svg>">
 </head>
@@ -14,7 +14,7 @@
 
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
-  <div id="stormBar"><span class="stormLbl">FADE</span><span id="stormTxt">—</span></div>
+  <div id="stormBar"><span class="stormLbl">THE FADE</span><span id="stormTxt">-</span></div>
 
   <div id="topRightInfo">
     <div class="trBox"><span id="aliveNum">0</span><label>ALIVE</label></div>
@@ -25,11 +25,11 @@
   <div id="dropHint" class="hidden"></div>
 
   <div id="bottomCenter">
-    <div id="useBar" class="hidden"><div id="useFill"></div><span id="useTxt">Using…</span></div>
+    <div id="useBar" class="hidden"><div id="useFill"></div><span id="useTxt">Using</span></div>
     <div id="shieldBar"><div id="shieldFill"></div><span id="shieldTxt">0</span></div>
     <div id="hpBar"><div id="hpFill"></div><span id="hpTxt">100</span></div>
     <div id="slots"></div>
-    <div id="buildHint" class="hidden">BUILD: <b id="buildMatTxt">WOOD</b> <span class="dim">(Z/X/C to switch)</span></div>
+    <div id="buildHint" class="hidden">BUILD <b id="buildMatTxt">WOOD</b> <span class="dim">Z X C to switch</span></div>
   </div>
 
   <div id="bottomRight">
@@ -40,29 +40,31 @@
       <div class="mat" id="mat-metal"><span class="matDot metal"></span><b id="matN-metal">0</b></div>
     </div>
     <div id="controls">
-      <span><kbd>W A S D</kbd></span><span>move</span>
+      <span><kbd>WASD</kbd></span><span>move</span>
       <span><kbd>Mouse</kbd></span><span>aim</span>
-      <span><kbd>LMB</kbd></span><span>shoot / swing / place wall</span>
+      <span><kbd>LMB</kbd></span><span>shoot, swing, place</span>
       <span><kbd>Q</kbd></span><span>build mode</span>
-      <span><kbd>Z X C</kbd></span><span>wood / stone / metal</span>
+      <span><kbd>ZXC</kbd></span><span>wood, stone, metal</span>
       <span><kbd>1-5</kbd></span><span>slots</span>
       <span><kbd>R</kbd></span><span>reload</span>
-      <span><kbd>E</kbd></span><span>open chest / interact</span>
-      <span><kbd>G</kbd></span><span>drop item</span>
-      <span><kbd>SPACE</kbd></span><span>jump from the bus</span>
+      <span><kbd>E</kbd></span><span>chest, interact</span>
+      <span><kbd>G</kbd></span><span>drop</span>
+      <span><kbd>Space</kbd></span><span>jump from the bus</span>
+      <span><kbd>Esc</kbd></span><span>menu</span>
     </div>
   </div>
 </div>
 
+<!-- ============ ESC SIDE MENU ============ -->
 <div id="pauseMenu" class="hidden">
-  <div class="pmHead"><span>MENU</span><span class="dim">ESC to close</span></div>
-  <div class="pmSec">SQUAD</div>
+  <div class="pmHead"><span>Menu</span><span class="dim">Esc to close</span></div>
+  <div class="pmSec">Squad</div>
   <div id="pmSquad" class="pmSquad"></div>
   <button id="pmInvite" class="pmBtn">Copy invite link</button>
-  <div class="pmSec">ACCOUNT</div>
+  <div class="pmSec">Account</div>
   <div id="pmAcct" class="pmAcct">Playing as guest</div>
   <button id="pmAccount" class="pmBtn">Account, friends and outfits</button>
-  <div class="pmSec">MATCH</div>
+  <div class="pmSec">Match</div>
   <button id="pauseResume" class="pmBtn">Resume</button>
   <button id="pauseMute" class="pmBtn">Mute sound</button>
   <button id="pauseLeave" class="pmBtn danger">Leave match</button>
@@ -70,92 +72,54 @@
 <div id="banner" class="hidden"></div>
 <div id="toasts"></div>
 
-<!-- ============ SPECTATE BAR ============ -->
+<!-- spectating -->
 <div id="specBar" class="hidden">
   <button id="specPrev">&#8249;</button>
-  <span>SPECTATING <b id="specName">?</b></span>
+  <span>Spectating <b id="specName">?</b></span>
   <button id="specNext">&#8250;</button>
 </div>
 
 <!-- ============ MENU ============ -->
 <div id="menu" class="overlay">
-  <div class="menuLogo">
-    <div class="logoRow">
-      <svg class="bolt" viewBox="0 0 28 40" aria-hidden="true"><polygon points="19,1 3,24 11,24 8,39 25,15 16,15" fill="#ffd23a" stroke="#0e1206" stroke-width="2" stroke-linejoin="round"/></svg>
-      <h1 class="logo">FORT<span class="lite">LITE</span></h1>
+  <header class="menuTop">
+    <span class="wordmark">FORTLITE</span>
+    <div class="topRight">
+      <button id="qualityBtn" class="ghost">Quality: High</button>
+      <button id="acctTop" class="ghost">Sign in</button>
     </div>
-    <div class="tagline">LOOT &middot; BUILD &middot; OUTLAST</div>
-  </div>
+  </header>
 
-  <div class="menuDropdowns">
-    <div class="mDrop">Region: Auto</div>
-    <div class="mDrop" id="qualityBtn">Quality: High</div>
-  </div>
+  <nav class="menuNav">
+    <button class="navBtn" id="navProfile">Profile</button>
+    <button class="navBtn" id="navCosmetics">Outfits</button>
+    <button class="navBtn" id="navFriends">Friends</button>
+    <button class="navBtn" id="navLeaders">Leaderboard</button>
+  </nav>
 
-  <div class="menuLeft">
-    <button class="navBtn" id="navProfile"><span>Profile</span></button>
-    <button class="navBtn" id="navCosmetics"><span>Cosmetics</span></button>
-    <button class="navBtn" id="navFriends"><span>Friends</span></button>
-    <button class="navBtn" id="navLeaders"><span>Leaderboards</span></button>
-  </div>
-
-  <div class="menuCenter">
-    <div id="skinPreview">
-      <div class="charShadow"></div>
-      <div class="charGun"></div>
-      <div class="charBody"></div>
-      <div class="charHand h1"></div>
-      <div class="charHand h2"></div>
+  <main class="menuMain">
+    <label class="fieldLabel" for="nameInput">Name</label>
+    <div class="nameRow">
+      <div id="skinPreview"><span class="charBody"></span></div>
+      <input id="nameInput" maxlength="16" placeholder="Name" autocomplete="off" spellcheck="false">
     </div>
-
-    <div class="nickWrap">
-      <input id="nameInput" maxlength="16" placeholder="Set Your Nickname" autocomplete="off" spellcheck="false">
-    </div>
-
-    <h3 class="chooseHdr">CHOOSE A GAME MODE</h3>
+    <div class="fieldLabel">Mode</div>
     <div class="modeRow">
-      <button id="soloBtn" class="modeBtn solo"><span class="modeIcon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.5" r="4.2" fill="currentColor"/><path d="M3.5 21.5c0-4.7 3.8-8.5 8.5-8.5s8.5 3.8 8.5 8.5z" fill="currentColor"/></svg></span>SOLO</button>
-      <button id="duoBtn" class="modeBtn duo"><span class="modeIcon"><svg viewBox="0 0 30 24" aria-hidden="true"><circle cx="8.5" cy="6" r="4" fill="currentColor"/><path d="M.8 21.5C.8 17 4.4 13.4 8.5 13.4S16.2 17 16.2 21.5z" fill="currentColor"/><circle cx="20.5" cy="7" r="3.4" fill="currentColor" opacity="0.7"/><path d="M15.2 21.5c.7-3.6 3.3-6.2 6.6-6.4 3.2.3 5.6 2.8 6 6.4z" fill="currentColor" opacity="0.7"/></svg></span>DUO</button>
+      <button id="soloBtn" class="modeBtn"><b>Solo</b><small>Last one standing</small></button>
+      <button id="duoBtn" class="modeBtn"><b>Duo</b><small>Two per team</small></button>
     </div>
-
     <div id="menuStatus"></div>
+  </main>
+
+  <footer class="menuFoot">
     <div class="controls">
-      <div><b>WASD</b> move</div><div><b>Mouse</b> aim</div><div><b>LMB</b> shoot / swing / place</div>
-      <div><b>E</b> open chest / grab</div><div><b>Q</b> build mode</div><div><b>Z X C</b> wood / stone / metal</div>
-      <div><b>1-5</b> slots</div><div><b>R</b> reload</div><div><b>G</b> drop</div><div><b>M</b> mute</div>
+      <div><b>WASD</b>move</div><div><b>Mouse</b>aim</div><div><b>LMB</b>shoot, swing, place</div>
+      <div><b>E</b>chest, grab</div><div><b>Q</b>build mode</div><div><b>ZXC</b>wood, stone, metal</div>
+      <div><b>1-5</b>slots</div><div><b>R</b>reload</div><div><b>G</b>drop</div><div><b>M</b>mute</div>
     </div>
-  </div>
-
-  <div class="menuSeason">
-    <div class="seasonName">SEASON 1</div>
-    <div class="seasonSub" id="seasonSub">Rookie</div>
-    <div class="xpBar"><div id="xpFill"></div></div>
-    <div class="xpLabel" id="xpLabel">0 XP</div>
-  </div>
-
-  <div class="menuFooter">
-    <span class="copy">FORTLITE</span>
-    <a class="fakeLink" data-msg="It's all fun and games — go take the Victory Royale!">Terms of Use</a>
-    <a class="fakeLink" data-msg="We only store your nickname in your own browser.">Privacy Policy</a>
-  </div>
+  </footer>
 </div>
 
-<!-- ============ PROFILE ============ -->
-<div id="profilePanel" class="overlay hidden">
-  <div class="panel profilePanel">
-    <h2 class="lobbyTitle">PROFILE</h2>
-    <div class="profileName" id="profileName">Player</div>
-    <div class="profStats">
-      <div><b id="stMatches">0</b><label>MATCHES</label></div>
-      <div><b id="stWins">0</b><label>WINS</label></div>
-      <div><b id="stKills">0</b><label>ELIMS</label></div>
-      <div><b id="stBest">#—</b><label>BEST</label></div>
-    </div>
-    <div class="lobbyBtns"><button id="profileClose">Back</button></div>
-  </div>
-</div>
-
-<!-- ============ LOBBY ============ -->
+<!-- ============ ACCOUNT ============ -->
 <div id="acctPanel" class="overlay hidden">
   <div class="acctCard">
     <div class="acctTabs">
@@ -171,7 +135,7 @@
           <button id="loginBtn">Log in</button>
           <button id="registerBtn" class="primary">Create account</button>
         </div>
-        <p class="acctHint">Your account keeps your name, stats and friends. Anyone can make one; the name is yours once it is taken.</p>
+        <p class="acctHint">An account keeps your name, stats, friends and outfits.</p>
       </div>
       <div id="authUser" class="hidden">
         <div class="acctName" id="acctName">Player</div>
@@ -179,9 +143,9 @@
           <div><b id="acMatches">0</b><label>MATCHES</label></div>
           <div><b id="acWins">0</b><label>WINS</label></div>
           <div><b id="acKills">0</b><label>ELIMS</label></div>
-          <div><b id="acBest">#-</b><label>BEST</label></div>
+          <div><b id="acBest">-</b><label>BEST</label></div>
         </div>
-        <div class="acctHint">Outfit: unlocks as you play. Your outfit shows on the battlefield.</div>
+        <div class="acctHint">Outfits unlock as you play. Your outfit shows in your next match.</div>
         <div id="outfitRow" class="outfitRow"></div>
         <div class="acctMsg" id="outfitMsg"></div>
         <div class="acctRow"><button id="logoutBtn">Log out</button></div>
@@ -203,24 +167,26 @@
     <div class="acctRow acctFoot"><button id="acctClose">Back</button></div>
   </div>
 </div>
+
+<!-- ============ LOBBY ============ -->
 <div id="lobby" class="overlay hidden">
   <div class="panel lobbyPanel">
-    <div id="lobbyMode" class="lobbyModeTag">SOLO</div>
-    <h2 class="lobbyTitle">MATCH STARTING</h2>
+    <div id="lobbyMode" class="lobbyModeTag">Solo</div>
+    <h2 class="lobbyTitle">Match starting</h2>
     <div id="lobbyCountdown">15</div>
     <div id="teamRow" class="teamRow"></div>
     <div id="lobbyPlayers"></div>
     <div class="lobbyBtns">
       <button id="inviteBtn">Copy invite link</button>
     </div>
-    <div class="tip" id="lobbyTip">Walk the spawn island while the bus loads. Press SPACE over the map to jump, then steer onto a POI!</div>
+    <div class="tip" id="lobbyTip">Land on the island while the bus loads. Press Space over the map to jump. POIs are on the minimap.</div>
   </div>
 </div>
 
 <!-- ============ DEATH ============ -->
 <div id="death" class="overlay hidden">
   <div class="panel deathPanel">
-    <h2 class="deathTitle">ELIMINATED</h2>
+    <h2 class="deathTitle">Eliminated</h2>
     <div id="deathBy">by The Fade</div>
     <div class="deathStats">
       <div><b id="deathPlace">#12</b><label>PLACED</label></div>
@@ -229,24 +195,24 @@
     <div class="lobbyBtns">
       <button id="specBtn">Spectate</button>
     </div>
-    <div class="tip">Next match starts automatically — invite friends with the link in the lobby!</div>
+    <div class="tip">The next match starts automatically.</div>
   </div>
 </div>
 
-<!-- ============ END / WIN ============ -->
+<!-- ============ END ============ -->
 <div id="end" class="overlay hidden">
   <div class="panel endPanel">
-    <h2 id="endTitle">VICTORY ROYALE</h2>
-    <div id="endWinner">Team Blue wins!</div>
+    <h2 id="endTitle">Victory Royale</h2>
+    <div id="endWinner">Team Blue wins</div>
     <table id="endBoard"></table>
-    <div class="tip">Next match starting soon…</div>
+    <div class="tip">The next match starts soon.</div>
   </div>
 </div>
 
 <!-- ============ DISCONNECT ============ -->
 <div id="disc" class="overlay hidden">
   <div class="panel">
-    <h2>CONNECTION LOST</h2>
+    <h2 class="discTitle">Connection lost</h2>
     <button id="reconnectBtn" class="big">Reconnect</button>
   </div>
 </div>

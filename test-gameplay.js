@@ -225,8 +225,12 @@ async function main() {
   A.send({ t: 'input', x: 0, y: 0, aim: 0, f: false, b: false });
   if (!wallEv) throw new Error('could not place a wall from any angle this seed');
   ok(wallEv.m === 'wood', `placed wood wall @${wallEv.gx},${wallEv.gy}`);
-  const youB = await A.wait(m => m.t === 'you' && m.mats.wood < youAfter.mats.wood, 5000);
-  ok(youB.mats.wood === youAfter.mats.wood - 10, `wood deducted (${youAfter.mats.wood} → ${youB.mats.wood})`);
+  // The angle loop can place more than one wall (a wall whose event wait timed out still got built),
+  // so count every wall the server reported and expect 10 wood per wall.
+  await new Promise(r => setTimeout(r, 300));
+  const wallsPlaced = A.msgs.filter(m => m.t === 'ev' && m.k === 'wall').length;
+  const youB = A.last(m => m.t === 'you' && m.mats);
+  ok(youB.mats.wood === youAfter.mats.wood - 10 * wallsPlaced, `wood deducted for ${wallsPlaced} wall(s) (${youAfter.mats.wood} → ${youB.mats.wood})`);
   // swing at the wall to damage it (150 hp / 50 per swing)
   const pW = posOf(A, wa.id);
   const wallAim2 = Math.atan2(wallEv.gy * 60 + 30 - pW.y, wallEv.gx * 60 + 30 - pW.x);

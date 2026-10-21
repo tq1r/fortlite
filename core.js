@@ -1490,7 +1490,9 @@ function sanitizeName(n) {
 // ============================================================
 //  Socket handling: conn = { send(str), ping(), slow(), closed, _close(), onmessage, onclose }
 // ============================================================
-function acceptSocket(conn) {
+// account: null for guests, or { token, name, outfit } that the Worker verified from a ticket.
+// Guests send a name only; their token and outfit are ignored (outfit 0, no stats).
+function acceptSocket(conn, account) {
   let client = null;
 
   conn.onmessage = (str) => {
@@ -1501,10 +1503,11 @@ function acceptSocket(conn) {
 
     if (!client) {
       if (msg.t === 'hello') {
+        const acct = (account && typeof account === 'object') ? account : null;
         client = {
-          id: nextEntityId++, ws: conn, name: sanitizeName(msg.name),
-          token: typeof msg.token === 'string' ? msg.token.slice(0, 80) : '',
-          outfit: clampOutfit(msg.outfit),
+          id: nextEntityId++, ws: conn, name: sanitizeName(acct ? acct.name : msg.name),
+          token: acct && typeof acct.token === 'string' ? acct.token.slice(0, 80) : '',
+          outfit: acct ? clampOutfit(acct.outfit) : 0,
           team: 0, modeChoice: 'solo', player: null,
           lx: S.ISLAND.x, ly: S.ISLAND.y, la: 0, li: null,
         };
