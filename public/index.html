@@ -150,6 +150,50 @@
 </div>
 
 <!-- ============ LOBBY ============ -->
+<div id="acctPanel" class="overlay hidden">
+  <div class="acctCard">
+    <div class="acctTabs">
+      <button class="acctTab" data-tab="account">Account</button>
+      <button class="acctTab" data-tab="friends">Friends</button>
+      <button class="acctTab" data-tab="leaders">Leaderboard</button>
+    </div>
+    <div class="acctBody" id="tab-account">
+      <div id="authForm">
+        <input id="authName" maxlength="16" placeholder="Name (3-16 letters, numbers, _)" autocomplete="username" spellcheck="false">
+        <input id="authPass" type="password" maxlength="100" placeholder="Password (6+ characters)" autocomplete="current-password">
+        <div class="acctRow">
+          <button id="loginBtn">Log in</button>
+          <button id="registerBtn" class="primary">Create account</button>
+        </div>
+        <p class="acctHint">Your account keeps your name, stats and friends. Anyone can make one; the name is yours once it is taken.</p>
+      </div>
+      <div id="authUser" class="hidden">
+        <div class="acctName" id="acctName">Player</div>
+        <div class="acctStats">
+          <div><b id="acMatches">0</b><label>MATCHES</label></div>
+          <div><b id="acWins">0</b><label>WINS</label></div>
+          <div><b id="acKills">0</b><label>ELIMS</label></div>
+          <div><b id="acBest">#-</b><label>BEST</label></div>
+        </div>
+        <div class="acctRow"><button id="logoutBtn">Log out</button></div>
+      </div>
+      <div class="acctMsg" id="authMsg"></div>
+    </div>
+    <div class="acctBody hidden" id="tab-friends">
+      <div id="friendAddRow" class="acctRow">
+        <input id="friendName" maxlength="16" placeholder="Add a friend by name" spellcheck="false">
+        <button id="friendAdd">Add</button>
+      </div>
+      <div id="friendList" class="acctList"></div>
+      <div class="acctMsg" id="friendMsg"></div>
+    </div>
+    <div class="acctBody hidden" id="tab-leaders">
+      <table class="acctTable" id="leaderTable"></table>
+      <div class="acctMsg" id="leaderMsg"></div>
+    </div>
+    <div class="acctRow acctFoot"><button id="acctClose">Back</button></div>
+  </div>
+</div>
 <div id="lobby" class="overlay hidden">
   <div class="panel lobbyPanel">
     <div id="lobbyMode" class="lobbyModeTag">SOLO</div>

@@ -137,11 +137,11 @@ try {
   byId.get('qualityBtn').onclick();
   ok(byId.get('qualityBtn').textContent.includes('Low'), 'quality toggles to Low');
 
-  // profile panel
+  // account panel (signed out: sign-in form)
   byId.get('navProfile').onclick();
-  ok(!byId.get('profilePanel').classList.contains('hidden'), 'profile panel opens');
-  byId.get('profileClose').onclick();
-  ok(byId.get('profilePanel').classList.contains('hidden'), 'profile panel closes');
+  ok(!byId.get('acctPanel').classList.contains('hidden'), 'account panel opens');
+  byId.get('acctClose').onclick();
+  ok(byId.get('acctPanel').classList.contains('hidden'), 'account panel closes');
 
   deliver({ t: 'welcome', id: 7, state: 'lobby', ver: 1 });
   deliver({ t: 'lobby', state: 'lobby', cd: 9, mode: 'solo', players: [{ id: 7, name: 'SmokeTester', team: 0, bot: false, mode: 'solo' }], maxPlayers: 30 });

@@ -213,7 +213,7 @@ function connect() {
   try { ws = new WebSocket(url); } catch (e) { setStatus('WebSocket unavailable'); return; }
   ws.onopen = () => {
     wsReady = true;
-    ws.send(JSON.stringify({ t: 'hello', name: connectedName }));
+    ws.send(JSON.stringify({ t: 'hello', name: connectedName, token: localStorage.getItem(TOKEN_KEY) || '' }));
     send({ t: 'mode', m: myModeChoice });
     setStatus('Connected! Waiting for server…');
   };
@@ -540,7 +540,7 @@ function confetti() {
 //  UI helpers
 // ============================================================
 function show(id) {
-  for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'profilePanel']) $(o).classList.add('hidden');
+  for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'profilePanel', 'acctPanel']) $(o).classList.add('hidden');
   $('pauseMenu').classList.add('hidden'); pauseOpen = false;
   if (id) $(id).classList.remove('hidden');
 }
@@ -1809,11 +1809,129 @@ function fillProfile() {
   $('stKills').textContent = s.k;
   $('stBest').textContent = s.b ? '#' + s.b : '#—';
 }
-$('navProfile').onclick = () => { fillProfile(); show('profilePanel'); };
-$('profileClose').onclick = () => show('menu');
+$('navProfile').onclick = () => openAcct('account');
+$('navFriends').onclick = () => openAcct('friends');
+$('navLeaders').onclick = () => openAcct('leaders');
 $('navCosmetics').onclick = () => toast('Cosmetics coming in a future season!');
-$('navFriends').onclick = () => toast('Invite friends — share the lobby link!');
-$('navLeaders').onclick = () => toast('Leaderboards coming soon — get those elims!');
+
+// ============================================================
+//  Accounts: sign-in, profile, friends, leaderboard (server: /api/*)
+// ============================================================
+const TOKEN_KEY = 'fl_token';
+let acct = null;                     // { name, matches, wins, kills, best } when signed in
+function apiBase() { return (window.FORTLITE_SERVER || '').replace(/\/+$/, ''); }
+async function api(path, body) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers = { 'content-type': 'application/json' };
+  if (token) headers.authorization = 'Bearer ' + token;
+  try {
+    const r = await fetch(apiBase() + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
+    let data = {}; try { data = await r.json(); } catch (_) { /* empty body */ }
+    return { ok: r.ok, status: r.status, data };
+  } catch (_) {
+    return { ok: false, status: 0, data: { error: 'Could not reach the server' } };
+  }
+}
+function setMsg(id, text, bad) { const el = $(id); el.textContent = text || ''; el.classList.toggle('err', !!bad); }
+function acctTab(name) {
+  document.querySelectorAll('.acctTab').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  for (const t of ['account', 'friends', 'leaders']) $('tab-' + t).classList.toggle('hidden', t !== name);
+  if (name === 'friends') loadFriends();
+  if (name === 'leaders') loadLeaders();
+}
+function openAcct(tab) {
+  show('acctPanel');
+  acctTab(tab);
+  renderAcct();
+}
+function renderAcct() {
+  const on = !!acct;
+  $('authForm').classList.toggle('hidden', on);
+  $('authUser').classList.toggle('hidden', !on);
+  $('friendAddRow').classList.toggle('hidden', !on);
+  if (on) {
+    $('acctName').textContent = acct.name;
+    $('acMatches').textContent = acct.matches; $('acWins').textContent = acct.wins;
+    $('acKills').textContent = acct.kills; $('acBest').textContent = acct.best ? '#' + acct.best : '#-';
+    nameInput.value = acct.name; nameInput.readOnly = true;
+    if (!$('friendList').children.length) setMsg('friendMsg', '');
+  } else {
+    nameInput.readOnly = false;
+  }
+  if (!on && !$('friendList').children.length) setMsg('friendMsg', 'Log in to add friends.');
+}
+function signIn(data) {
+  localStorage.setItem(TOKEN_KEY, data.token);
+  acct = { name: data.name, matches: data.matches, wins: data.wins, kills: data.kills, best: data.best };
+  $('authPass').value = '';
+  setMsg('authMsg', 'Signed in as ' + data.name);
+  renderAcct();
+  loadFriends();
+}
+async function authDo(kind) {
+  const name = $('authName').value.trim(), password = $('authPass').value;
+  if (!name || !password) { setMsg('authMsg', 'Enter a name and a password.', true); return; }
+  setMsg('authMsg', kind === 'register' ? 'Creating account…' : 'Logging in…');
+  const r = await api(kind === 'register' ? '/api/register' : '/api/login', { name, password });
+  if (!r.ok) { setMsg('authMsg', r.data.error || 'Something went wrong.', true); return; }
+  signIn(r.data);
+}
+$('registerBtn').onclick = () => authDo('register');
+$('loginBtn').onclick = () => authDo('login');
+$('authPass').addEventListener('keydown', e => { if (e.key === 'Enter') authDo('login'); });
+$('logoutBtn').onclick = async () => {
+  await api('/api/logout', {});
+  localStorage.removeItem(TOKEN_KEY);
+  acct = null;
+  nameInput.value = ''; nameInput.readOnly = false;
+  setMsg('authMsg', 'Logged out.');
+  renderAcct();
+};
+$('acctClose').onclick = () => show('menu');
+document.querySelectorAll('.acctTab').forEach(b => b.onclick = () => acctTab(b.dataset.tab));
+
+async function loadMe() {
+  if (!localStorage.getItem(TOKEN_KEY)) { renderAcct(); return; }
+  const r = await api('/api/me');
+  if (r.ok) { acct = r.data; renderAcct(); }
+  else { localStorage.removeItem(TOKEN_KEY); acct = null; renderAcct(); }
+}
+async function loadFriends() {
+  const list = $('friendList');
+  list.innerHTML = '';
+  if (!acct) { setMsg('friendMsg', 'Log in to see your friends.'); return; }
+  const r = await api('/api/friends');
+  if (!r.ok) { setMsg('friendMsg', r.data.error || 'Could not load friends.', true); return; }
+  setMsg('friendMsg', r.data.rows.length ? '' : 'No friends yet. Add someone by their name.');
+  for (const f of r.data.rows) {
+    const row = document.createElement('div');
+    row.textContent = f.name + '  ·  ' + f.wins + ' wins, ' + f.kills + ' elims';
+    list.appendChild(row);
+  }
+}
+$('friendAdd').onclick = async () => {
+  const name = $('friendName').value.trim();
+  if (!name) return;
+  const r = await api('/api/friends/add', { name });
+  if (!r.ok) { setMsg('friendMsg', r.data.error || 'Could not add that friend.', true); return; }
+  $('friendName').value = '';
+  setMsg('friendMsg', 'Friend added.');
+  loadFriends();
+};
+async function loadLeaders() {
+  const t = $('leaderTable');
+  t.innerHTML = '';
+  const r = await api('/api/leaderboard');
+  if (!r.ok) { setMsg('leaderMsg', 'Could not load the leaderboard.', true); return; }
+  setMsg('leaderMsg', r.data.rows.length ? '' : 'No results yet. Win a match to get on the board.');
+  r.data.rows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + (i + 1) + '</td><td></td><td class="n">' + row.wins + ' wins</td><td class="n">' + row.kills + ' elims</td>';
+    tr.children[1].textContent = row.name;
+    t.appendChild(tr);
+  });
+}
+loadMe();
 document.querySelectorAll('.fakeLink').forEach(el => {
   el.onclick = () => toast(el.getAttribute('data-msg') || '');
 });

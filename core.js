@@ -11,6 +11,7 @@ const FAST = !!opts.fast;
 const NO_STORM = !!opts.nostorm;
 const NO_BUS = !!opts.nobus;   // debug: drop everyone straight onto the map
 const BOT_FILL = (typeof opts.bots === 'number') ? opts.bots : S.BOT_FILL;
+const onMatchEnd = typeof opts.onMatchEnd === 'function' ? opts.onMatchEnd : null;   // reports human results (accounts)
 
 const TICK_MS = 50;
 const DT = TICK_MS / 1000;
@@ -573,6 +574,14 @@ function endMatch(winnerTeam) {
   G.state = 'end';
   G.endTimer = END_TIME;
   const winners = G.players.filter(p => p.alive);
+  if (onMatchEnd) {
+    const rows = [];
+    for (const c of clients.values()) {
+      if (!c.player || !c.token) continue;
+      rows.push({ token: c.token, name: c.name, kills: c.player.kills || 0, place: c.player.alive ? 1 : (c.player.placement || 0), won: !!c.player.alive });
+    }
+    if (rows.length) { try { Promise.resolve(onMatchEnd(rows)).catch(() => {}); } catch (_) { /* reporting must never break the match */ } }
+  }
   const winnerIds = winners.map(p => p.id);
   let winnerName = 'Nobody';
   if (winners.length) {
@@ -1489,6 +1498,7 @@ function acceptSocket(conn) {
       if (msg.t === 'hello') {
         client = {
           id: nextEntityId++, ws: conn, name: sanitizeName(msg.name),
+          token: typeof msg.token === 'string' ? msg.token.slice(0, 80) : '',
           team: 0, modeChoice: 'solo', player: null,
           lx: S.ISLAND.x, ly: S.ISLAND.y, la: 0, li: null,
         };
