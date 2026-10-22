@@ -60,6 +60,10 @@ function matchStats(mode, seed) {
     }
     if (G.state === 'active' && G.matchTime > 800) break;
   }
+  // how spread out the landings are: the share of all landings in the busiest 600x600 square
+  const cells = new Map();
+  for (const l of landings) { const k = Math.floor(l.x / 600) + ',' + Math.floor(l.y / 600); cells.set(k, (cells.get(k) || 0) + 1); }
+  const busiest = landings.length ? Math.max(...cells.values()) / landings.length : 0;
   const edge = landings.filter(l => l.x < 40 || l.y < 40 || l.x > W - 40 || l.y > W - 40).length;
   const nearPoi = landings.filter(l => pts.some(q => S2.dist(l.x, l.y, q.x, q.y) < 350)).length;
   const after = jumps.filter(j => j.after).length;
@@ -68,6 +72,7 @@ function matchStats(mode, seed) {
     stormBotSec: +stormBotSec.toFixed(1), longestStormSec: +longest.toFixed(1),
     jumps: jumps.length, jumpsAfterCentre: after, landings: landings.length, edgeLandings: edge,
     nearPoiShare: landings.length ? +(nearPoi / landings.length).toFixed(2) : 0,
+    busiestSquareShare: +busiest.toFixed(2),
     counts: global.__cnt,
   };
 }
@@ -80,7 +85,7 @@ const sum = (arr, k) => arr.reduce((a, r) => a + (r[k] || 0), 0);
 const agg = {
   solo: { stormShare: +(sum(solo, 'stormShare') / runs).toFixed(4), longestStormSec: Math.max(...solo.map(r => r.longestStormSec)),
     jumps: sum(solo, 'jumps'), jumpsAfterCentre: sum(solo, 'jumpsAfterCentre'), landings: sum(solo, 'landings'), edgeLandings: sum(solo, 'edgeLandings'),
-    nearPoiShare: +(sum(solo, 'nearPoiShare') / runs).toFixed(2) },
+    nearPoiShare: +(sum(solo, 'nearPoiShare') / runs).toFixed(2), busiestSquareShare: +(Math.max(...solo.map(r => r.busiestSquareShare))).toFixed(2) },
   duo: { stormShare: +(sum(duo, 'stormShare') / runs).toFixed(4), longestStormSec: Math.max(...duo.map(r => r.longestStormSec)),
     jumps: sum(duo, 'jumps'), jumpsAfterCentre: sum(duo, 'jumpsAfterCentre'), landings: sum(duo, 'landings'), edgeLandings: sum(duo, 'edgeLandings'),
     knocks: duo.reduce((a, r) => a + ((r.counts && r.counts.knock) || 0), 0), revives: duo.reduce((a, r) => a + ((r.counts && r.counts.revive) || 0), 0),

@@ -44,7 +44,10 @@ console.log('[2] duo: a hit that would kill is a knock');
   ok(A.knT === S.KNOCK.bleed, `A bleeds for ${S.KNOCK.bleed}s`);
   ok(A.knBy === E, 'the knock is credited to the attacker');
   g.damagePlayer(A, 5, E, 'ar');
-  ok(!A.alive, 'a knocked player is finished off by the next hit');
+  ok(A.alive && A.kn, 'a fresh knock is safe for a moment (grace), so it can be seen and revived');
+  A.knGrace = 0;
+  g.damagePlayer(A, 5, E, 'ar');
+  ok(!A.alive, 'after the grace, the next hit finishes a knocked player');
   ok(E.kills === 1, 'the finisher gets the kill');
 }
 

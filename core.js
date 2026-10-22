@@ -452,7 +452,7 @@ function makePlayer(id, name, team, isBot) {
     stormAcc: 0,
     lastShotT: -99, lastDmgT: -99,
     ai: isBot ? newBotAI() : null,
-    kn: false, knT: 0, knBy: null, revT: 0, revSeen: -9,   // knocked (duo): bleed timer, revive progress
+    kn: false, knT: 0, knBy: null, knGrace: 0, revT: 0, revSeen: -9,   // knocked (duo): bleed timer, revive progress
     stuckT: 0, lastX: 0, lastY: 0,
     ph: S.PH.ground, fallT: 0, alt: 0, fallVx: 0, fallVy: 0, vx: 0, vy: 0,
   };
@@ -477,7 +477,7 @@ function botSkill() {
 function newBotAI() {
   return {
     mode: 'wander', thinkT: Math.random() * 0.3,
-    jumpS: undefined, poi: null,
+    jumpS: undefined, poi: null, drop: null,
     skill: botSkill(),
     target: null, reactT: 0,
     mem: null,                    // last seen enemy: {x, y, vx, vy, t}
@@ -636,26 +636,43 @@ function busProgress() { return Math.min(G.bus.t, G.bus.dur) * G.bus.speed; }
 function pickDrop(p) {
   const ai = p.ai, b = G.bus, now = busProgress();
   const drift = diveDrift();
-  const cands = [];
-  for (const poi of G.pois) {
-    const ox = poi.x - b.sx, oy = poi.y - b.sy;
-    const along = ox * b.dx + oy * b.dy;
-    const perp = Math.abs(ox * b.dy - oy * b.dx);
-    if (perp > 520) continue;                    // too far off the route to steer onto
+  const W = S.WORLD, m = 400;
+  const use = G.dropUse || (G.dropUse = new Map());
+  // a point is usable when the bus can get a dive there: near enough to the route to steer onto
+  // and not already passed
+  const usable = (x, y) => {
+    const ox = x - b.sx, oy = y - b.sy;
+    const along = ox * b.dx + oy * b.dy, perp = Math.abs(ox * b.dy - oy * b.dx);
     const js = along - drift;
-    if (js < now + 120) continue;                // already passed it
-    cands.push({ poi, js });
+    if (perp > 760 || js < now + 120 || js > b.dur * b.speed) return null;
+    // only inside the start circle: a bot dropped outside it has to run for the storm
+    const st = G.storm;
+    if (st && S.dist(x, y, st.cx, st.cy) > st.r * 0.55) return null;
+    return { x, y, js };
+  };
+  let pick = null, poi = null;
+  for (let tries = 0; tries < 60 && !pick; tries++) {
+    if (Math.random() < 0.5 && G.pois.length) {
+      // a POI, but the less a POI has been picked this match, the more likely (spreads the bots out)
+      const q = G.pois[(Math.random() * G.pois.length) | 0];
+      if (Math.random() > 1 / (1 + (use.get(q.id) || 0) * 0.5)) continue;
+      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * q.r * 1.1;
+      const c = usable(q.x + Math.cos(a) * d, q.y + Math.sin(a) * d);
+      if (c) { pick = c; poi = q; }
+    } else {
+      // a random spot anywhere on the island
+      const c = usable(m + Math.random() * (W - 2 * m), m + Math.random() * (W - 2 * m));
+      if (c) pick = c;
+    }
   }
-  let pick = null;
-  if (cands.length && Math.random() < 0.7) pick = cands[(Math.random() * cands.length) | 0];
-  if (pick) {
-    ai.poi = pick.poi;
-    ai.jumpS = pick.js + (Math.random() - 0.5) * 90;   // not every bot lands on the same pixel
-  } else {
-    // a random spot near the middle of the route, still well before the map edge
-    ai.poi = null;
-    ai.jumpS = Math.min(S.BUS.span, now + 300 + Math.random() * 400);
+  if (!pick) {
+    // nothing usable found: aim at the middle of the map
+    pick = usable(W / 2, W / 2) || { x: W / 2, y: W / 2, js: Math.min(S.BUS.span, now + 300) };
   }
+  if (poi) use.set(poi.id, (use.get(poi.id) || 0) + 1);
+  ai.poi = poi;
+  ai.drop = { x: pick.x, y: pick.y };
+  ai.jumpS = pick.js + (Math.random() - 0.5) * 90;   // not every bot lands on the same pixel
 }
 // bot brain while riding the bus or skydiving
 function botAir(p, dt) {
@@ -666,8 +683,8 @@ function botAir(p, dt) {
     if (ai.jumpS != null && busProgress() >= ai.jumpS) startFall(p);
     return;
   }
-  if (p.ph === S.PH.fall && ai.poi) {
-    const dx = ai.poi.x - p.x, dy = ai.poi.y - p.y, d = Math.hypot(dx, dy);
+  if (p.ph === S.PH.fall && ai.drop) {
+    const dx = ai.drop.x - p.x, dy = ai.drop.y - p.y, d = Math.hypot(dx, dy);
     if (d > 40) { inp.mx = dx / d; inp.my = dy / d; } else { inp.mx = 0; inp.my = 0; }
   }
 }
@@ -681,6 +698,7 @@ function startMatch() {
   genMap((Math.random() * 1e9) | 0);
   G.players = [];
   G.matchTime = 0;
+  G.dropUse = new Map();   // how often each POI was picked as a drop this match
   G.mode = lobbyMode();
   const humans = [...clients.values()];
   let teamTotal = 0;
@@ -802,7 +820,12 @@ function resetToLobby() {
 // ============================================================
 function damagePlayer(victim, amount, attacker, cause) {
   if (!victim.alive || G.state !== 'active' || victim.ph !== S.PH.ground) return;
-  if (victim.kn) { killPlayer(victim, attacker, cause); return; }   // a knocked player can be finished off
+  if (victim.kn) {
+    // a knocked player is safe for a moment, then any hit finishes them
+    if (victim.knGrace > 0) return;
+    killPlayer(victim, attacker, cause);
+    return;
+  }
   let dmg = amount;
   if (victim.shield > 0) {
     const absorbed = Math.min(victim.shield, dmg);
@@ -827,7 +850,7 @@ function canKnock(v, cause) {
   return G.players.some(q => q !== v && q.alive && !q.kn && q.team === v.team);
 }
 function knockPlayer(v, attacker) {
-  v.kn = true; v.knT = S.KNOCK.bleed; v.knBy = attacker || null;
+  v.kn = true; v.knT = S.KNOCK.bleed; v.knBy = attacker || null; v.knGrace = S.KNOCK.grace;
   v.hp = 0; v.shield = 0; v.revT = 0; v.revSeen = -9;
   v.pending = []; v.useT = 0; v.reloadT = 0; v.vx = 0; v.vy = 0;
   v.input.fire = false; v.input.build = false; v.input.mx = 0; v.input.my = 0; v.input.r = false;
@@ -840,6 +863,7 @@ function updateKnocked(p, dt) {
   // revive progress decays if nobody is reviving any more
   if (G.matchTime - p.revSeen > 0.25) p.revT = Math.max(0, p.revT - dt * 2);
   p.knT -= dt;
+  if (p.knGrace > 0) p.knGrace -= dt;
   if (p.knT <= 0) killPlayer(p, p.knBy, 'bleed');
 }
 // a living teammate standing still within reach, holding E, revives the nearest knocked teammate
