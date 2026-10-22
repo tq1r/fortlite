@@ -288,64 +288,66 @@
   const WALL_PX = 120;   // 2x the 60-unit grid cell
   function wallDraw(gg, mat, stage, flat) {
     const r = rnd(mat.length * 977 + stage * 13 + (flat ? 5 : 0));
-    // drawing space is 0..WALL_PX with the top-left at 0,0
-    if (mat === 'wood') {
-      gg.fillStyle = '#9a7048'; gg.fillRect(0, 0, WALL_PX, WALL_PX);
-      for (let i = 0; i < 4; i++) {
-        const y = i * 30;
-        gg.fillStyle = ['#a57a4f', '#94693f', '#a57a4f', '#8e623a'][i];
-        gg.fillRect(0, y, WALL_PX, 30);
-        gg.fillStyle = 'rgba(60, 36, 16, 0.35)'; gg.fillRect(0, y + 28, WALL_PX, 2);
-        gg.fillStyle = 'rgba(255,220,170,0.14)'; gg.fillRect(0, y, WALL_PX, 2);
-        gg.fillStyle = '#3c2612';
-        gg.beginPath(); gg.arc(10, y + 15, 2, 0, TAU); gg.arc(WALL_PX - 10, y + 15, 2, 0, TAU); gg.fill();
+    const P = WALL_PX;
+    if (!flat) {
+      // WALLS: dark solid blocks, a bright bevelled top cap, a heavy black outline.
+      // Walls are the only things with a dark outline and a light inner cap.
+      const body = { wood: '#4a3019', stone: '#3d4246', metal: '#2c3642' }[mat] || '#3d4246';
+      const cap = { wood: '#b08255', stone: '#a9b0b7', metal: '#8fa3b8' }[mat] || '#a9b0b7';
+      const seam = { wood: 'rgba(40,24,10,0.55)', stone: 'rgba(40,44,48,0.6)', metal: 'rgba(20,28,38,0.6)' }[mat];
+      gg.fillStyle = body; gg.fillRect(0, 0, P, P);
+      // inner cap, inset from the outline
+      gg.fillStyle = cap; gg.fillRect(10, 10, P - 20, P - 20);
+      // cap texture
+      gg.strokeStyle = seam; gg.lineWidth = 3;
+      if (mat === 'wood') {
+        for (let y = 10; y < P - 10; y += 22) { gg.beginPath(); gg.moveTo(10, y); gg.lineTo(P - 10, y); gg.stroke(); }
+      } else if (mat === 'stone') {
+        for (let row = 0; row < 3; row++) {
+          const y = 10 + row * 33;
+          gg.beginPath(); gg.moveTo(10, y); gg.lineTo(P - 10, y); gg.stroke();
+          const off = row % 2 ? 25 : 0;
+          for (let x = 10 + off; x < P - 10; x += 50) { gg.beginPath(); gg.moveTo(x, y); gg.lineTo(x, y + 33); gg.stroke(); }
+        }
+      } else {
+        // metal: rivet dots on the cap corners
+        gg.fillStyle = '#50606f';
+        for (const [x, y] of [[18, 18], [P - 18, 18], [18, P - 18], [P - 18, P - 18]]) { gg.beginPath(); gg.arc(x, y, 3, 0, TAU); gg.fill(); }
       }
-    } else if (mat === 'stone') {
-      gg.fillStyle = '#6d7379'; gg.fillRect(0, 0, WALL_PX, WALL_PX);
-      for (let row = 0; row < 4; row++) {
-        const off = row % 2 ? 20 : 0;
-        for (let k = -1; k < 3; k++) {
-          const x = off + k * 40, y = row * 30;
-          const left = Math.max(0, x + 1), right = Math.min(WALL_PX, x + 39);
-          if (right <= left) continue;
-          const tone = 128 + r() * 22;
-          gg.fillStyle = `rgb(${tone}, ${tone + 3}, ${tone + 7})`;
-          gg.fillRect(left, y + 1, right - left, 28);
+      // bevel: lit top-left, shaded bottom-right of the cap
+      gg.fillStyle = 'rgba(255,255,255,0.35)'; gg.fillRect(10, 10, P - 20, 4); gg.fillRect(10, 10, 4, P - 20);
+      gg.fillStyle = 'rgba(0,0,0,0.30)'; gg.fillRect(10, P - 14, P - 20, 4); gg.fillRect(P - 14, 10, 4, P - 20);
+      // heavy outline
+      gg.strokeStyle = '#0b0a07'; gg.lineWidth = 8;
+      gg.strokeRect(4, 4, P - 8, P - 8);
+    } else {
+      // FLOORS: pale flat tiles, fine seams, no outline and no bevel, so they read as the ground inside a building
+      const base = { wood: '#dccfae', stone: '#d4d7d9', metal: '#c9d2dc' }[mat] || '#d4d7d9';
+      const seam = { wood: 'rgba(120,96,60,0.28)', stone: 'rgba(90,96,102,0.30)', metal: 'rgba(70,84,100,0.30)' }[mat];
+      gg.fillStyle = base; gg.fillRect(0, 0, P, P);
+      gg.strokeStyle = seam; gg.lineWidth = 2;
+      if (mat === 'wood') {
+        // long floorboards running one way
+        for (let y = 0; y < P; y += 30) { gg.beginPath(); gg.moveTo(0, y); gg.lineTo(P, y); gg.stroke(); }
+      } else {
+        // square tiles
+        for (let i = 0; i <= P; i += 30) {
+          gg.beginPath(); gg.moveTo(i, 0); gg.lineTo(i, P); gg.stroke();
+          gg.beginPath(); gg.moveTo(0, i); gg.lineTo(P, i); gg.stroke();
         }
       }
-      gg.fillStyle = 'rgba(255,255,255,0.12)'; gg.fillRect(0, 0, WALL_PX, 3);
-    } else {
-      gg.fillStyle = '#5b6878'; gg.fillRect(0, 0, WALL_PX, WALL_PX);
-      for (const [x, y] of [[4, 4], [60, 4], [4, 60], [60, 60]]) {
-        gg.fillStyle = '#6f7e91'; gg.fillRect(x, y, 56, 56);
-        gg.fillStyle = 'rgba(255,255,255,0.18)'; gg.fillRect(x, y, 56, 2); gg.fillRect(x, y, 2, 56);
-        gg.fillStyle = 'rgba(0,0,0,0.25)'; gg.fillRect(x, y + 54, 56, 2); gg.fillRect(x + 54, y, 2, 56);
-        gg.fillStyle = '#b8c3d0';
-        for (const [ax, ay] of [[8, 8], [48, 8], [8, 48], [48, 48]]) { gg.beginPath(); gg.arc(x + ax, y + ay, 2.2, 0, TAU); gg.fill(); }
-      }
-    }
-    if (!flat) {
-      // a raised block: lit top-left edge, shaded bottom-right edge, heavy dark outline
-      gg.fillStyle = 'rgba(255,255,255,0.22)'; gg.fillRect(0, 0, WALL_PX, 5); gg.fillRect(0, 0, 5, WALL_PX);
-      gg.fillStyle = 'rgba(0,0,0,0.36)'; gg.fillRect(0, WALL_PX - 12, WALL_PX, 12); gg.fillRect(WALL_PX - 12, 0, 12, WALL_PX);
-      gg.strokeStyle = '#15120c'; gg.lineWidth = 6;
-      gg.strokeRect(3, 3, WALL_PX - 6, WALL_PX - 6);
-    } else {
-      // ground-level floor: lighter, flat, only thin seams between cells
-      gg.fillStyle = 'rgba(255,255,255,0.08)'; gg.fillRect(0, 0, WALL_PX, WALL_PX);
-      gg.strokeStyle = 'rgba(0,0,0,0.28)'; gg.lineWidth = 3;
-      gg.strokeRect(1.5, 1.5, WALL_PX - 3, WALL_PX - 3);
+      gg.fillStyle = 'rgba(255,255,255,0.10)'; gg.fillRect(0, 0, P, P);
     }
     if (stage > 0) {
-      gg.strokeStyle = 'rgba(20, 12, 6, 0.8)'; gg.lineWidth = 3; gg.lineCap = 'round';
+      gg.strokeStyle = 'rgba(10, 6, 2, 0.85)'; gg.lineWidth = 3; gg.lineCap = 'round';
       const cracks = stage + 1;
       for (let i = 0; i < cracks; i++) {
-        let x = 20 + r() * 80, y = 10 + r() * 30;
+        let x = 22 + r() * 76, y = 14 + r() * 26;
         gg.beginPath(); gg.moveTo(x, y);
         for (let k = 0; k < 3; k++) { x += (r() - 0.5) * 30; y += 14 + r() * 14; gg.lineTo(x, y); }
         gg.stroke();
       }
-      if (stage >= 3) { gg.fillStyle = 'rgba(0,0,0,0.25)'; gg.fillRect(0, 0, WALL_PX, WALL_PX); }
+      if (stage >= 3) { gg.fillStyle = 'rgba(0,0,0,0.25)'; gg.fillRect(0, 0, P, P); }
     }
   }
   // a 60-unit grid cell, authored at 120 px and scaled down
