@@ -144,7 +144,7 @@ let matchTime = 0;
 const cam = { x: S.WORLD / 2, y: S.WORLD / 2 };
 let camFocus = null;        // player object or me
 // read-only hook for browser tests
-window.__fl = { get me() { return me; }, get you() { return you; }, get mode() { return mode; }, get tracers() { return tracers; }, get live() { return matchLive; }, get renderMs() { return renderMs; } };
+window.__fl = { get me() { return me; }, get lme() { return lme; }, get cam() { return cam; }, get mouse() { return mouse; }, get you() { return you; }, get mode() { return mode; }, get tracers() { return tracers; }, get live() { return matchLive; }, get renderMs() { return renderMs; } };
 let specId = null;
 
 // fx
