@@ -1725,10 +1725,12 @@ function frame() {
   } else if (mode === 'play' && me && you && you.alive) {
     predictSelf(dt);
     camZoom += (1 - camZoom) * Math.min(1, dt * 3);
-    const wm = screenToWorld(mouse.x, mouse.y);
+    // aim lookahead from the mouse's offset to the screen centre (not from the
+    // camera's own position, which made the camera drift and return after a stop)
+    const ax = (mouse.x - vw / 2) / scale, ay = (mouse.y - vh / 2) / scale;
     camFocus = {
-      x: me.x + Math.max(-90, Math.min(90, (wm.x - me.x) * 0.16)),
-      y: me.y + Math.max(-90, Math.min(90, (wm.y - me.y) * 0.16)),
+      x: me.x + Math.max(-90, Math.min(90, ax * 0.16)),
+      y: me.y + Math.max(-90, Math.min(90, ay * 0.16)),
     };
   } else if (mode === 'spec' || mode === 'dead') {
     specGuard -= dt;
@@ -1749,7 +1751,9 @@ function frame() {
   // phase HUD: bus / skydive hints replace the item bar
   const ph = (mode === 'play' && me) ? me.ph : -1;
   if (ph !== lastPh) { lastPh = ph; applyDropHUD(ph); }
-  const cl = Math.min(1, dt * 7);
+  // a tighter follow while alive on the ground, so the camera does not keep sliding after you stop
+  const tight = mode === 'play' && me && you && you.alive && me.ph === S.PH.ground;
+  const cl = Math.min(1, dt * (tight ? 25 : 7));
   cam.x += (camFocus.x - cam.x) * cl;
   cam.y += (camFocus.y - cam.y) * cl;
   const camPad = (me && me.ph === S.PH.bus) ? 900 : 0;
