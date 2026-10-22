@@ -41,8 +41,27 @@ body { font-family: var(--ui); color: var(--ink); user-select: none; -webkit-use
 
 #minimap {
   position: absolute; top: 12px; right: 12px; z-index: 6;
-  border: 1px solid var(--line-2); background: rgba(11, 13, 10, 0.9); pointer-events: none;
+  width: 200px; height: 200px; box-sizing: content-box;
+  border: 1px solid #3a3f35; background: #0c0f0b; pointer-events: auto; cursor: pointer;
 }
+#bigMap {
+  position: fixed; inset: 0; z-index: 30; background: rgba(4, 6, 4, 0.78);
+  display: flex; align-items: center; justify-content: center;
+}
+#bigMap .bmBox {
+  background: #0c0f0b; border: 1px solid #3a3f35; padding: 14px; box-sizing: border-box;
+  width: min(calc(100vh - 40px), 900px); max-width: calc(100vw - 40px);
+}
+#bigMap .bmHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+#bigMap .bmTitle { font-weight: 900; letter-spacing: .14em; color: #efeee8; font-size: 15px; }
+#bigMap .bmClose {
+  background: transparent; color: #efeee8; border: 1px solid #3a3f35; padding: 5px 10px;
+  font: 700 12px Arial, sans-serif; cursor: pointer;
+}
+#bigMap .bmClose:hover { border-color: #ff7a1a; color: #ff7a1a; }
+#bigMapCanvas { width: 100%; height: auto; display: block; aspect-ratio: 1 / 1; background: #0c0f0b; }
+#bigMap .bmLegend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; color: #b9bdb0; }
+#bigMap .lg { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.6); }
 
 #killfeed {
   position: absolute; top: 200px; right: 12px; width: 240px;

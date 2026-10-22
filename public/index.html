@@ -10,7 +10,20 @@
 <body>
 <canvas id="game"></canvas>
 <div class="fx-vignette"></div>
-<canvas id="minimap" width="176" height="176"></canvas>
+<canvas id="minimap" width="200" height="200" title="Map (M)"></canvas>
+<div id="bigMap" class="hidden" role="dialog" aria-label="Map">
+  <div class="bmBox">
+    <div class="bmHead"><span class="bmTitle">MAP</span><button id="bmClose" class="bmClose" type="button">Close (M)</button></div>
+    <canvas id="bigMapCanvas" width="760" height="760"></canvas>
+    <div class="bmLegend">
+      <span><i class="lg" style="background:#ffffff"></i>You</span>
+      <span><i class="lg" style="background:#ffd76e"></i>Named place</span>
+      <span><i class="lg" style="background:#ffd23a"></i>Battle Bus</span>
+      <span><i class="lg" style="background:#a98bff"></i>The Fade</span>
+      <span><i class="lg" style="background:#ffffff;opacity:.6"></i>Next circle</span>
+    </div>
+  </div>
+</div>
 
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">

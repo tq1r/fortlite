@@ -274,6 +274,7 @@ function onStart(m) {
   world.floors = w.floors;
   world.stormCfg = w.storm;
   world.pois = w.pois || [];
+  world.roads = w.roads || [];
   FLArt.reset(world);
   storm = null; aliveCount = m.players.length; matchTime = 0;
   players.clear(); tracers.length = 0; dmgNums.length = 0; parts.length = 0; swings.clear();
@@ -820,6 +821,8 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const c = e.code;
   if (mode === 'menu' && c === 'Enter') { $('soloBtn').click(); return; }
+  if (bigOpen && (c === 'Escape' || c === 'KeyM')) { toggleBigMap(false); return; }
+  if (c === 'KeyM' && mode === 'play' && !pauseOpen) { toggleBigMap(); return; }
   if (c === 'Escape') { togglePause(); return; }
   if (pauseOpen) return;
   keys.add(c);
@@ -1646,92 +1649,158 @@ function applyDropHUD(ph) {
 // ============================================================
 //  Minimap
 // ============================================================
-let mmStatic = null;
-function buildMinimapStatic() {
-  mmStatic = document.createElement('canvas');
-  mmStatic.width = mmStatic.height = 176;
-  const g = mmStatic.getContext('2d');
-  const k = 176 / world.size;
-  g.fillStyle = '#698e41';
-  g.fillRect(0, 0, 176, 176);
-  // water blobs
-  g.fillStyle = '#1d70b3';
+const MM_PX = 200;          // small minimap size (canvas pixels)
+const BM_PX = 380;          // big map base resolution (scaled up on screen)
+const BIOME_COL = { snow: [222, 229, 236], forest: [56, 92, 50], desert: [214, 190, 130], swamp: [86, 106, 64], plains: [112, 150, 74] };
+const SEA_COL = [40, 92, 146], BEACH_COL = [210, 190, 140];
+let mmBase = null, bmBase = null, bigOpen = false;
+const bigCanvas = $('bigMapCanvas'), bigCtx = bigCanvas.getContext('2d');
+
+// Ground, sea, beaches, water, roads and (on the big map) buildings. Built once per match.
+function buildMapBase(px, detailed) {
+  const c = document.createElement('canvas');
+  c.width = c.height = px;
+  const g = c.getContext('2d');
+  const img = g.createImageData(px, px);
+  const d = img.data;
+  const k = world.size / px;                       // world units per canvas pixel
+  for (let j = 0; j < px; j++) for (let i = 0; i < px; i++) {
+    const x = (i + 0.5) * k, y = (j + 0.5) * k;
+    const cd = S.coastDist(x, y);
+    const col = cd < 0 ? SEA_COL : cd < 34 ? BEACH_COL : (BIOME_COL[S.biomeAt(x, y)] || BIOME_COL.plains);
+    const q = (j * px + i) * 4;
+    d[q] = col[0]; d[q + 1] = col[1]; d[q + 2] = col[2]; d[q + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  g.fillStyle = '#2a72b4';
   for (const o of world.obstacles) {
     if (o.type !== 'water') continue;
-    g.beginPath(); g.arc(o.x * k, o.y * k, Math.max(1.5, o.r * k), 0, TAU); g.fill();
+    g.beginPath(); g.arc(o.x / k, o.y / k, Math.max(1, o.r / k), 0, TAU); g.fill();
   }
-  for (const f of world.floors) {
-    g.fillStyle = 'rgba(30,30,40,0.55)';
-    g.fillRect(f.x * k, f.y * k, f.w * k, f.h * k);
+  g.strokeStyle = 'rgba(128, 106, 72, 0.9)';
+  g.lineWidth = Math.max(1, 46 / k); g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const r of world.roads || []) {
+    g.beginPath();
+    r.forEach(([x, y], i) => (i ? g.lineTo(x / k, y / k) : g.moveTo(x / k, y / k)));
+    g.stroke();
   }
-  for (const o of world.obstacles) {
-    if (o.type === 'tree') g.fillStyle = '#4c6e2e';
-    else if (o.type === 'rock') g.fillStyle = '#a8aaa0';
-    else if (o.type === 'crate') g.fillStyle = '#5f6d7e';
-    else continue;
-    g.fillRect(o.x * k - 1.5, o.y * k - 1.5, 3, 3);
+  if (detailed) {
+    g.fillStyle = 'rgba(34, 30, 26, 0.85)';
+    for (const f of world.floors) g.fillRect(f.x / k, f.y / k, Math.max(2, f.w / k), Math.max(2, f.h / k));
   }
-  for (const w of world.walls.values()) {
-    g.fillStyle = 'rgba(220,220,230,0.5)';
-    g.fillRect(w.gx * S.GRID * k, w.gy * S.GRID * k, S.GRID * k, S.GRID * k);
-  }
-  // POI dots with names: the only place POI names appear
-  g.font = '700 9px "Segoe UI", sans-serif';
-  g.textBaseline = 'middle'; g.textAlign = 'left';
-  g.lineJoin = 'round';
-  for (const p of world.pois || []) {
-    const x = p.x * k, y = p.y * k;
-    g.fillStyle = '#ffd76e'; g.beginPath(); g.arc(x, y, 3, 0, TAU); g.fill();
-    // labels flip to the left of the dot near the right edge so they stay on the minimap
-    const left = x > 118;
-    g.textAlign = left ? 'right' : 'left';
-    const tx = left ? x - 5 : x + 5;
-    g.lineWidth = 3; g.strokeStyle = 'rgba(8,12,8,0.9)'; g.strokeText(p.n, tx, y);
-    g.fillStyle = '#fff1c4'; g.fillText(p.n, tx, y);
-  }
+  return c;
 }
-function renderMinimap() {
-  if (!mmStatic) return;
-  const g = mmCtx;
-  g.clearRect(0, 0, 176, 176);
-  if (mode === 'lobby') return;
-  g.drawImage(mmStatic, 0, 0);
-  const k = 176 / world.size;
-  // chests
-  g.fillStyle = '#ffd23a';
-  for (const c of world.chests.values()) if (!c.open) g.fillRect(c.x * k - 1.5, c.y * k - 1.5, 3, 3);
-  // storm
+function buildMinimapStatic() {
+  mmBase = buildMapBase(MM_PX, false);
+  bmBase = null;                                   // the big map is built when first opened
+}
+
+// Dots and rings drawn over a base (both maps). k = world units per canvas pixel.
+function drawMapDynamic(g, px, k) {
+  const sc = (v) => v / k;
+  // The Fade (storm): current circle, and the next one in white
   if (storm) {
-    g.strokeStyle = 'rgba(200,130,255,0.95)'; g.lineWidth = 1.8;
-    g.beginPath(); g.arc(storm.x * k, storm.y * k, storm.r * k, 0, TAU); g.stroke();
+    g.strokeStyle = 'rgba(169, 139, 255, 0.95)'; g.lineWidth = 1.6;
+    g.beginPath(); g.arc(sc(storm.x), sc(storm.y), sc(storm.r), 0, TAU); g.stroke();
     if (storm.nr < storm.r - 5) {
-      g.strokeStyle = 'rgba(255,255,255,0.9)';
-      g.beginPath(); g.arc(storm.nx * k, storm.ny * k, storm.nr * k, 0, TAU); g.stroke();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      g.beginPath(); g.arc(sc(storm.nx), sc(storm.ny), sc(storm.nr), 0, TAU); g.stroke();
     }
   }
-  // self / teammates / spectate target
-  const drawDot = (x, y, col, r) => {
+  // bus: a dot and, on the big map, its heading
+  const bp = (mode === 'play' || mode === 'spec') ? interpBus(performance.now() - 100) : null;
+  if (bp && bigOpen) {
+    g.strokeStyle = 'rgba(255, 210, 58, 0.55)'; g.lineWidth = 1.2; g.setLineDash([4, 4]);
+    g.beginPath();
+    g.moveTo(sc(bp.x - Math.cos(bp.a) * 9000), sc(bp.y - Math.sin(bp.a) * 9000));
+    g.lineTo(sc(bp.x + Math.cos(bp.a) * 9000), sc(bp.y + Math.sin(bp.a) * 9000));
+    g.stroke(); g.setLineDash([]);
+  }
+  if (bp) {
+    g.fillStyle = '#ffd23a';
+    g.beginPath(); g.arc(sc(bp.x), sc(bp.y), 3.5, 0, TAU); g.fill();
+  }
+  const dot = (x, y, col, r) => {
     g.fillStyle = col;
-    g.beginPath(); g.arc(x * k, y * k, r || 3, 0, TAU); g.fill();
-    g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1;
-    g.stroke();
+    g.beginPath(); g.arc(sc(x), sc(y), r, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(0, 0, 0, 0.7)'; g.lineWidth = 1; g.stroke();
   };
   const myTeam = players.get(myId) ? players.get(myId).team : 0;
   if (mode === 'play' && me && you && you.alive) {
-    drawDot(me.x, me.y, '#fff', 3.5);
     if (myTeam > 0) for (const p of players.values()) {
       if (p.id === myId || p.team !== myTeam || !p.buf.length) continue;
       const ip = interpPlayer(p, performance.now() - 120);
-      if (ip) drawDot(ip.x, ip.y, S.TEAMS[p.team].color, 3);
+      if (ip) dot(ip.x, ip.y, S.TEAMS[p.team].color, 3);
     }
+    // you: a dot with a short pointer in your aim direction
+    const x = sc(me.x), y = sc(me.y);
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(x, y, bigOpen ? 5 : 3.5, 0, TAU); g.fill();
+    g.strokeStyle = '#ffffff'; g.lineWidth = bigOpen ? 2 : 1.5;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(me.aim) * (bigOpen ? 16 : 9), y + Math.sin(me.aim) * (bigOpen ? 16 : 9)); g.stroke();
   } else if ((mode === 'spec' || mode === 'dead') && specId) {
     const p = players.get(specId);
     if (p) {
       const ip = interpPlayer(p, performance.now() - 120);
-      if (ip) drawDot(ip.x, ip.y, '#fff', 3.5);
+      if (ip) dot(ip.x, ip.y, '#ffffff', 3.5);
     }
   }
 }
+
+function renderMinimap() {
+  if (!mmBase || mode === 'lobby') { mmCtx.clearRect(0, 0, MM_PX, MM_PX); return; }
+  mmCtx.drawImage(mmBase, 0, 0, MM_PX, MM_PX);
+  drawMapDynamic(mmCtx, MM_PX, world.size / MM_PX);
+}
+
+// The big map: named places, buildings, and a legend. M or a click on the minimap opens it.
+function renderBigMap() {
+  if (!bmBase) bmBase = buildMapBase(BM_PX, true);
+  // everything on this canvas is in canvas pixels: k = world units per canvas pixel
+  const g = bigCtx, W = bigCanvas.width;
+  const k = world.size / W, sc = (v) => v / k;
+  g.clearRect(0, 0, W, W);
+  g.drawImage(bmBase, 0, 0, W, W);
+  // named places: a label is dropped when it would sit on top of one already placed
+  g.font = '700 12px "Segoe UI", Arial, sans-serif';
+  g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  const placed = [];
+  const boxHit = (b) => placed.some(q => !(b.x2 < q.x1 || b.x1 > q.x2 || b.y2 < q.y1 || b.y1 > q.y2));
+  for (const p of world.pois || []) {
+    const x = sc(p.x), y = sc(p.y);
+    g.fillStyle = '#ffd76e';
+    g.beginPath(); g.arc(x, y, 4, 0, TAU); g.fill();
+    const tw = g.measureText(p.n).width, h = 14;
+    // try right, left, above, below
+    const spots = [
+      { align: 'left', tx: x + 8, ty: y, box: (tx) => ({ x1: tx - 2, x2: tx + tw + 2 }) },
+      { align: 'right', tx: x - 8, ty: y, box: (tx) => ({ x1: tx - tw - 2, x2: tx + 2 }) },
+      { align: 'center', tx: x, ty: y - 12, box: (tx) => ({ x1: tx - tw / 2 - 2, x2: tx + tw / 2 + 2 }) },
+      { align: 'center', tx: x, ty: y + 12, box: (tx) => ({ x1: tx - tw / 2 - 2, x2: tx + tw / 2 + 2 }) },
+    ];
+    for (const sp of spots) {
+      const bx = sp.box(sp.tx);
+      const b = { x1: bx.x1, x2: bx.x2, y1: sp.ty - h / 2, y2: sp.ty + h / 2 };
+      if (b.x1 < 0 || b.x2 > W || b.y1 < 0 || b.y2 > W || boxHit(b)) continue;
+      placed.push(b);
+      g.textAlign = sp.align;
+      g.strokeStyle = 'rgba(8, 12, 8, 0.92)'; g.lineWidth = 3; g.strokeText(p.n, sp.tx, sp.ty);
+      g.fillStyle = '#fff1c4'; g.fillText(p.n, sp.tx, sp.ty);
+      break;
+    }
+  }
+  drawMapDynamic(g, W, k);
+}
+
+function toggleBigMap(force) {
+  if (mode === 'menu' || mode === 'lobby' || !world.size) return;
+  bigOpen = (typeof force === 'boolean') ? force : !bigOpen;
+  $('bigMap').classList.toggle('hidden', !bigOpen);
+  if (bigOpen) { keys.clear(); mouse.fire = false; bmBase = null; renderBigMap(); }
+}
+$('minimap').addEventListener('click', () => toggleBigMap());
+$('bigMap').addEventListener('click', (e) => { if (e.target.id === 'bigMap' || e.target.id === 'bmClose') toggleBigMap(false); });
 
 // ============================================================
 //  Main loop
@@ -1825,6 +1894,10 @@ function frame() {
   render(now, rt);
   renderMs = renderMs * 0.9 + (performance.now() - renderT0) * 0.1;
   renderMinimap();
+  if (bigOpen) {
+    if (mode !== 'play' && mode !== 'spec' && mode !== 'dead') toggleBigMap(false);
+    else renderBigMap();
+  }
 }
 requestAnimationFrame(frame);
 

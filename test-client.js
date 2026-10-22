@@ -71,7 +71,7 @@ const sandbox = {
   document: {
     getElementById(id) {
       if (!byId.has(id)) {
-        byId.set(id, id === 'game' || id === 'minimap' ? makeCanvas() : makeNode('div'));
+        byId.set(id, id === 'game' || id === 'minimap' || id === 'bigMapCanvas' ? makeCanvas() : makeNode('div'));
       }
       return byId.get(id);
     },

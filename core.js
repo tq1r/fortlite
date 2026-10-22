@@ -125,10 +125,24 @@ function genMap(seed) {
     return best;
   };
 
+  const nearestRoadPoint = (x, y) => {
+    let best = 1e18, bx = x, by = y;
+    for (const [x1, y1, x2, y2] of roadSegs) {
+      const vx = x2 - x1, vy = y2 - y1;
+      const l2 = vx * vx + vy * vy || 1;
+      const t = Math.max(0, Math.min(1, ((x - x1) * vx + (y - y1) * vy) / l2));
+      const px = x1 + vx * t, py = y1 + vy * t, d = S.dist2(x, y, px, py);
+      if (d < best) { best = d; bx = px; by = py; }
+    }
+    return [bx, by];
+  };
+  // POIs are kept clear of trees and rocks so each named place reads as a place
+  const nearPoi = (x, y) => G.pois.some(p => S.dist2(p.x, p.y, x, y) < (p.r + 60) ** 2);
+
   const okSpot = (x, y, r, minDist) => {
     if (x < 80 + r || y < 80 + r || x > W - 80 - r || y > W - 80 - r) return false;
     if (S.coastDist(x, y) < r + 40) return false;
-    if (roadDist(x, y) < r + ROAD_HALF + 14) return false;
+    if (roadDist(x, y) < r + ROAD_HALF + 34) return false;
     for (const o of nearObs(x, y, r + minDist + MAX_R)) {
       if (S.dist2(x, y, o.x, o.y) < (minDist + o.r) ** 2) return false;
     }
@@ -143,11 +157,13 @@ function genMap(seed) {
   };
 
   // ---- building helper: perimeter walls with door gaps + interior chests ----
-  const placeBuilding = (gx0, gy0, cw, ch, mat, nChests) => {
+  const placeBuilding = (gx0, gy0, cw, ch, mat, nChests, faceX, faceY) => {
     G.floors.push({ x: gx0 * S.GRID, y: gy0 * S.GRID, w: cw * S.GRID, h: ch * S.GRID, mat });
     const doors = new Set();
-    doors.add('n' + Math.floor(rand() * cw)); doors.add('s' + Math.floor(rand() * cw));
-    doors.add('w' + Math.floor(rand() * ch)); doors.add('e' + Math.floor(rand() * ch));
+    const bcx = (gx0 + cw / 2) * S.GRID, bcy = (gy0 + ch / 2) * S.GRID;
+    const ddx = faceX - bcx, ddy = faceY - bcy;
+    if (Math.abs(ddx) >= Math.abs(ddy)) doors.add((ddx > 0 ? 'e' : 'w') + (1 + Math.floor(rand() * (ch - 2))));
+    else doors.add((ddy > 0 ? 's' : 'n') + (1 + Math.floor(rand() * (cw - 2))));
     const hp = S.MAT_HP[mat] * 2.5;
     for (let i = 0; i < cw; i++) {
       if (!doors.has('n' + i)) G.walls.set(S.wallKey(gx0 + i, gy0), { gx: gx0 + i, gy: gy0, mat, hp, maxHp: hp, prebuilt: true });
@@ -240,13 +256,13 @@ function genMap(seed) {
       const gx0 = Math.round((cx - cw * S.GRID / 2) / S.GRID), gy0 = Math.round((cy - ch * S.GRID / 2) / S.GRID);
       if (!floorFree(gx0, gy0, cw, ch)) continue;
       const mat = poi.k === 'ruins' ? 'stone' : poi.k === 'industrial' ? 'metal' : ['wood', 'stone', 'metal'][Math.floor(rand() * 3)];
-      placeBuilding(gx0, gy0, cw, ch, mat, 1 + (rand() < 0.6 ? 1 : 0));
+      placeBuilding(gx0, gy0, cw, ch, mat, 1 + (rand() < 0.6 ? 1 : 0), poi.x, poi.y);
       placed++;
     }
   }
   // a few lone houses next to roads
   let houses = 0;
-  for (let tries = 0; tries < 4000 && houses < Math.round(10 * AREA / 5); tries++) {
+  for (let tries = 0; tries < 4000 && houses < 4; tries++) {
     const x = rand() * W, y = rand() * W;
     const rd = roadDist(x, y);
     if (rd < 150 || rd > 420) continue;
@@ -254,7 +270,8 @@ function genMap(seed) {
     const gx0 = Math.floor(x / S.GRID), gy0 = Math.floor(y / S.GRID);
     if (!floorFree(gx0, gy0, cw, ch)) continue;
     if (G.pois.some(p => S.dist(p.x, p.y, x, y) < 520)) continue;
-    placeBuilding(gx0, gy0, cw, ch, ['wood', 'stone', 'metal'][Math.floor(rand() * 3)], 1);
+    const [rx, ry] = nearestRoadPoint(x, y);
+    placeBuilding(gx0, gy0, cw, ch, ['wood', 'stone', 'metal'][Math.floor(rand() * 3)], 1, rx, ry);
     houses++;
   }
 
@@ -323,7 +340,7 @@ function genMap(seed) {
   const ROCK_P = { snow: 1.0, desert: 0.45, plains: 0.1, forest: 0.07, swamp: 0.05 };
   const BUSH_P = { plains: 0.6, forest: 0.45, swamp: 0.4, desert: 0.12, snow: 0.03 };
 
-  const scatterByBiome = (type, target, r0, r1, hp, mat, probs, weightFn, tries) => {
+  const scatterByBiome = (type, target, r0, r1, hp, mat, probs, weightFn, tries, minD = 36) => {
     let placed = 0;
     for (let t = 0; t < tries && placed < target; t++) {
       const x = 120 + rand() * (W - 240), y = 120 + rand() * (W - 240);
@@ -331,18 +348,18 @@ function genMap(seed) {
       const p = (probs[S.biomeAt(x, y)] || 0) * weightFn(x, y);
       if (rand() > p) continue;
       const r = r0 + rand() * (r1 - r0);
-      if (!okSpot(x, y, r, 36)) continue;
+      if (nearPoi(x, y) || !okSpot(x, y, r, minD)) continue;
       if (G.floors.some(f => x > f.x - 30 && x < f.x + f.w + 30 && y > f.y - 30 && y < f.y + f.h + 30)) continue;
       addObs(type, x, y, r, hp, mat); placed++;
     }
     return placed;
   };
-  const treeTarget = Math.round(130 * AREA);
-  scatterByBiome('tree', treeTarget, 24, 30, 200, 'wood', TREE_P, (x, y) => 0.12 + 0.88 * clusterW(forestSeeds, x, y), 400000);
-  scatterByBiome('rock', Math.round(34 * AREA), 30, 34, 250, 'stone', ROCK_P, (x, y) => 0.25 + 0.75 * clusterW(mountainSeeds, x, y), 300000);
+  const treeTarget = Math.round(70 * AREA);
+  scatterByBiome('tree', treeTarget, 24, 30, 200, 'wood', TREE_P, (x, y) => 0.12 + 0.88 * clusterW(forestSeeds, x, y), 400000, 62);
+  scatterByBiome('rock', Math.round(16 * AREA), 30, 34, 250, 'stone', ROCK_P, (x, y) => 0.25 + 0.75 * clusterW(mountainSeeds, x, y), 300000);
   // mountain boulders: larger rocks in the snow
-  scatterByBiome('rock', Math.round(22 * AREA), 58, 96, 420, 'stone', { snow: 1.0 }, (x, y) => 0.2 + 0.8 * clusterW(mountainSeeds, x, y), 200000);
-  scatterByBiome('bush', Math.round(55 * AREA), 28, 32, 999, null, BUSH_P, (x, y) => 0.2 + 0.8 * clusterW(bushSeeds, x, y), 300000);
+  scatterByBiome('rock', Math.round(10 * AREA), 58, 96, 420, 'stone', { snow: 1.0 }, (x, y) => 0.2 + 0.8 * clusterW(mountainSeeds, x, y), 200000);
+  scatterByBiome('bush', Math.round(40 * AREA), 28, 32, 999, null, BUSH_P, (x, y) => 0.2 + 0.8 * clusterW(bushSeeds, x, y), 300000);
 
   // open-field chests and crates
   for (let i = 0; i < Math.round(16 * AREA * 0.9); i++) {
@@ -351,7 +368,7 @@ function genMap(seed) {
       if (okSpot(x, y, 34, 60)) { G.chests.push({ id: nextEntityId++, x, y, open: false }); break; }
     }
   }
-  scatterByBiome('crate', Math.round(20 * AREA), 26, 26, 250, 'metal', { plains: 1, forest: 0.6, swamp: 0.6, desert: 1, snow: 0.6 }, () => 1, 100000);
+  scatterByBiome('crate', Math.round(16 * AREA), 26, 26, 250, 'metal', { plains: 1, forest: 0.6, swamp: 0.6, desert: 1, snow: 0.6 }, () => 1, 100000);
 
   // floor loot
   const roll = (arr) => { let t = 0; for (const a of arr) t += a[1]; let r = rand() * t; for (const a of arr) { r -= a[1]; if (r <= 0) return a[0]; } return arr[0][0]; };

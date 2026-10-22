@@ -300,9 +300,14 @@ async function main() {
     if (d < bdC) { bdC = d; chest = c; }
   }
   console.log(`  … walking to chest @${chest.x},${chest.y} (${Math.round(bd)}px)`);
-  await moveToward(A, wa.id, chest.x, chest.y, 40);
-  A.send({ t: 'act', a: 'interact' });
-  const chestEv = await A.wait(m => m.t === 'ev' && m.k === 'chest', 5000);
+  // bigger map: the walk can take longer than the default limit, so allow 60 s and retry the interact
+  await moveToward(A, wa.id, chest.x, chest.y, 40, 60000);
+  let chestEv = null;
+  for (let tryN = 0; tryN < 3 && !chestEv; tryN++) {
+    A.send({ t: 'act', a: 'interact' });
+    chestEv = await A.wait(m => m.t === 'ev' && m.k === 'chest', 2500).catch(() => null);
+    if (!chestEv) await moveToward(A, wa.id, chest.x, chest.y, 40, 15000);
+  }
   ok(!!chestEv, `chest opened, loot spilled`);
   await A.wait(m => m.t === 'ev' && m.k === 'lootAdd', 3000);
   ok(true, 'loot spawned from chest');
