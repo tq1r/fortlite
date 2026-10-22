@@ -1678,6 +1678,7 @@ function tick() {
             use: p.useT > 0 ? 1 - p.useT / p.useTotal : 0,
             build: p.input.build, bmat: p.buildMat,
             alive: p.alive, kills: p.kills, place: p.placement,
+            ack: p.input.seq | 0, sx: Math.round(p.x * 10) / 10, sy: Math.round(p.y * 10) / 10,
           });
         }
       }
@@ -1770,6 +1771,7 @@ function acceptSocket(conn, account) {
         i.my = S.clamp(+msg.y || 0, -1, 1);
         i.aim = +msg.aim || 0;
         i.fire = !!msg.f;
+        i.seq = (+msg.n) | 0;   // input sequence number, echoed back in 'you' so the client can reconcile
         if (msg.f) i.firePulse = true;   // a quick tap must not be lost between ticks
         i.build = !!msg.b;
         break;

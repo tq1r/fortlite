@@ -162,6 +162,10 @@ const keys = new Set();
 const mouse = { x: innerWidth / 2, y: innerHeight / 2, fire: false };
 let buildMode = false, buildMat = 'wood';
 let lastInputSend = 0;
+let inSeq = 0;               // sequence number of the last input we sent
+const inHist = [];           // {n, x, y}: our predicted position when input n was sent
+let lastAck = -1;            // last input the server confirmed
+let visX = 0, visY = 0;      // on-screen error after a correction; eases to 0 so corrections do not jump
 let dpr = 1, vw = innerWidth, vh = innerHeight, scale = 1;
 let baseScale = 1, camZoom = 1;   // camZoom widens the view while the bus flies
 
@@ -258,6 +262,7 @@ function handle(m) {
 }
 
 function onStart(m) {
+  inHist.length = 0; lastAck = -1; visX = 0; visY = 0;   // new match: no pending inputs to reconcile
   rosterNow = m.players || [];
   const w = m.world;
   world.size = w.size; world.grid = w.grid;
@@ -328,6 +333,25 @@ function onSnap(m) {
 function onYou(m) {
   you = Object.assign(you || {}, m);
   updateHUD();
+  reconcileAck(m);
+}
+
+// The server echoes the last input it applied (m.ack) and its position then (m.sx, m.sy).
+// Compare with where we were when we sent that input, so latency is not read as a desync.
+// The correction is an offset that also shifts the pending history, so it is never applied twice.
+function reconcileAck(m) {
+  if (!me || m.ack === undefined) return;
+  if (me.ph !== S.PH.ground) { inHist.length = 0; return; }
+  if (m.ack <= lastAck) return;
+  lastAck = m.ack;
+  while (inHist.length && inHist[0].n < m.ack) inHist.shift();
+  const h = inHist.length && inHist[0].n === m.ack ? inHist[0] : null;
+  if (!h) return;
+  const dx = m.sx - h.x, dy = m.sy - h.y;
+  if (Math.hypot(dx, dy) < 10) return;  // within sampling noise (inputs are sent every 25 ms)
+  me.x += dx; me.y += dy;
+  for (const e of inHist) { e.x += dx; e.y += dy; }
+  visX -= dx; visY -= dy;              // draw from where we were, then ease in
 }
 
 // ============================================================
@@ -351,7 +375,7 @@ function onEv(e) {
     case 'shot': {
       if (e.id === myId) break;   // our own shot was already drawn by predictShot
       const w = S.WEAPONS[e.w];
-      tracers.push({ x: e.x, y: e.y, a: e.a, wi: e.w, sp: w.speed, t: 0, life: w.range / w.speed });
+      tracers.push({ x: e.x, y: e.y, a: e.a, wi: e.w, sp: w.speed, t: 0, life: shotLen(e.x, e.y, e.a, w.range, e.id) / w.speed });
       sfx.shot(e.w, e.x, e.y);
       // muzzle flash + recoil kick
       addParts(e.x, e.y, 5, '#ffe37a', 170, 0.12, 3.5);
@@ -881,7 +905,12 @@ function sendInput(force) {
   const [mx, my] = inputAxes();
   if (onIsland) { send({ t: 'input', x: mx, y: my, aim: lme.aim }); return; }
   // no shooting or building while on the bus or in the air
-  send({ t: 'input', x: mx, y: my, aim: me.aim, f: mouse.fire && me.ph === S.PH.ground, b: buildMode && me.ph === S.PH.ground });
+  inSeq++;
+  send({ t: 'input', n: inSeq, x: mx, y: my, aim: me.aim, f: mouse.fire && me.ph === S.PH.ground, b: buildMode && me.ph === S.PH.ground });
+  if (me.ph === S.PH.ground) {
+    inHist.push({ n: inSeq, x: me.x, y: me.y });
+    if (inHist.length > 240) inHist.shift();
+  }
 }
 
 // ============================================================
@@ -892,6 +921,34 @@ function sendInput(force) {
 let localFireCd = 0;
 let matchLive = false;
 let tapPending = false;  // a click that started and ended between two frames still counts   // the server only accepts fire once the match is live
+// How far a bullet flies before it stops: walls and solid obstacles, as on the server.
+// Bushes and water do not stop bullets. Players are not checked here (their hits come as events).
+function shotLen(x, y, a, range, shooterId) {
+  if (!world || !world.wallAt) return range;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  // other players the bullet can hit (same rule as the server: not your own team, living, on the ground)
+  const shooter = players.get(shooterId);
+  const shooterTeam = shooter ? (shooter.team > 0 ? shooter.team : -shooterId) : null;
+  const targets = [];
+  for (const [id, p] of players) {
+    if (id === shooterId || !p.buf.length || !snapAlive.has(id) || p.ph !== S.PH.ground) continue;
+    if (shooterTeam !== null && (p.team > 0 ? p.team : -id) === shooterTeam) continue;
+    targets.push(p.buf[p.buf.length - 1]);
+  }
+  for (let d = 8; d <= range; d += 8) {
+    const px = x + ca * d, py = y + sa * d;
+    if (px < 0 || py < 0 || px > world.size || py > world.size) return d;
+    if (world.wallAt(Math.floor(px / S.GRID), Math.floor(py / S.GRID))) return d;
+    for (const o of world.obstaclesNear(px, py, 40)) {
+      if (o.type === 'bush' || o.type === 'water') continue;
+      if (S.dist2(px, py, o.x, o.y) < o.r * o.r) return d;
+    }
+    for (const t of targets) {
+      if (S.dist2(px, py, t.x, t.y) < (S.PLAYER_R + 4) ** 2) return d;
+    }
+  }
+  return range;
+}
 function predictShot(dt) {
   if (localFireCd > 0) localFireCd -= dt;
   const want = mouse.fire || tapPending;
@@ -903,7 +960,7 @@ function predictShot(dt) {
   localFireCd = w.rof;
   s.mag--;   // server snapshot corrects this on its next update
   const x = me.x + Math.cos(me.aim) * 30, y = me.y + Math.sin(me.aim) * 30;
-  tracers.push({ x, y, a: me.aim, wi: s.w, sp: w.speed, t: 0, life: w.range / w.speed });
+  tracers.push({ x, y, a: me.aim, wi: s.w, sp: w.speed, t: 0, life: shotLen(x, y, me.aim, w.range, myId) / w.speed });
   sfx.shot(s.w, x, y);
   addParts(x, y, 5, '#ffe37a', 170, 0.12, 3.5);
   addParts(x, y, 2, '#fff3c0', 60, 0.08, 5);
@@ -912,6 +969,7 @@ function predictShot(dt) {
 }
 function predictSelf(dt) {
   if (!me) return;
+  const ease = Math.exp(-dt * 12); visX *= ease; visY *= ease;
   // aim from mouse
   const sp = worldToScreen(me.x, me.y);
   me.aim = Math.atan2(mouse.y - sp[1], mouse.x - sp[0]);
@@ -927,12 +985,7 @@ function predictSelf(dt) {
   }
   predictShot(dt);
   // reconcile
-  const dx = me.serverX - me.x, dy = me.serverY - me.y;
-  const d = Math.hypot(dx, dy);
-  // The server is always a little behind (network delay), so small gaps are normal.
-  // Ignore them so standing still stays still; only fix real desyncs, gently.
-  if (d > 160) { me.x = me.serverX; me.y = me.serverY; }
-  else if (d > 40) { const k = (d - 40) / d * 0.15; me.x += dx * k; me.y += dy * k; }
+  // reconciliation happens when the server acknowledges an input (reconcileAck)
 }
 function predictLobby(dt) {
   if (!lme) return;
@@ -1129,7 +1182,7 @@ function render(now, rt) {
     if (!ip) continue;
     drawPlayer(g, p, ip.x, ip.y, ip.a, now, focus, p.alt || 0);
   }
-  if (me && you && you.alive && me.ph === S.PH.ground) drawPlayer(g, players.get(myId), me.x, me.y, me.aim, now, focus, 0);
+  if (me && you && you.alive && me.ph === S.PH.ground) drawPlayer(g, players.get(myId), me.x + visX, me.y + visY, me.aim, now, focus, 0);
 
   // tree canopies
   for (const o of world.obstacles) {
@@ -1734,8 +1787,8 @@ function frame() {
     // camera's own position, which made the camera drift and return after a stop)
     const ax = (mouse.x - vw / 2) / scale, ay = (mouse.y - vh / 2) / scale;
     camFocus = {
-      x: me.x + Math.max(-90, Math.min(90, ax * 0.16)),
-      y: me.y + Math.max(-90, Math.min(90, ay * 0.16)),
+      x: me.x + visX + Math.max(-90, Math.min(90, ax * 0.16)),
+      y: me.y + visY + Math.max(-90, Math.min(90, ay * 0.16)),
     };
   } else if (mode === 'spec' || mode === 'dead') {
     specGuard -= dt;

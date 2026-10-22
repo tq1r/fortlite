@@ -48,7 +48,7 @@
   // ---- Spawn island, Battle Bus, skydive -------------------------
   S.ISLAND = { x: 2100, y: 2100, r: 560 };   // lobby island (round, ringed by water)
   S.ISLAND_SPEED = 260;                       // walk speed on the island
-  S.BUS = { span: 5600, speed: 330 };         // bus flies from -span to +span through map centre (about 35 s)
+  S.BUS = { span: 5600, speed: 600 };         // bus flies from -span to +span through map centre (about 19 s)
   S.FALL_TIME = 4.2;                          // seconds of skydive before landing
   S.FALL_SPEED = 230;                         // steering speed while skydiving
   S.FALL_CARRY = 0.45;                        // share of bus velocity carried into the dive
@@ -111,17 +111,18 @@
   S.HARVEST_BONUS = 20;        // extra mats when destroying
 
   // ---- Storm -----------------------------------------------------
-  // radii scale with the world (the old map was 4200 wide); times are about 40% longer
+  // Radii scale with the world (the old map was 4200 wide). Timings are the original tuned pace:
+  // the match should move fast, so do not stretch them for the bigger map.
   S.STORM = {
-    grace: 30, startR: 6000,
+    grace: 22, startR: 6000,
     phases: [
-      { wait: 25, shrink: 22, r: 4170, dps: 1 },
-      { wait: 20, shrink: 20, r: 2600, dps: 2 },
-      { wait: 17, shrink: 17, r: 1570, dps: 4 },
-      { wait: 14, shrink: 14, r: 900,  dps: 6 },
-      { wait: 13, shrink: 13, r: 470,  dps: 8 },
-      { wait: 11, shrink: 11, r: 150,  dps: 10 },
-      { wait: 11, shrink: 14, r: 0,    dps: 12 },
+      { wait: 18, shrink: 16, r: 4170, dps: 1 },
+      { wait: 14, shrink: 14, r: 2600, dps: 2 },
+      { wait: 12, shrink: 12, r: 1570, dps: 4 },
+      { wait: 10, shrink: 10, r: 900,  dps: 6 },
+      { wait: 9,  shrink: 9,  r: 470,  dps: 8 },
+      { wait: 8,  shrink: 8,  r: 150,  dps: 10 },
+      { wait: 8,  shrink: 10, r: 0,    dps: 12 },
     ],
   };
 
