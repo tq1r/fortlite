@@ -103,20 +103,16 @@
     g.setTransform(K, 0, 0, K, -ox * K, -oy * K);
     // grass blades and a few dirt patches (land only)
     const r = rnd(tx * 7919 + ty * 104729 + 17);
-    const landy = S.biomeAt(ox + TILE / 2, oy + TILE / 2) !== 'desert' && S.biomeAt(ox + TILE / 2, oy + TILE / 2) !== 'snow';
-    for (let n = 0; n < (landy ? 150 : 0); n++) {
+    // each blade checks its own spot, so no tile edge shows where the biome changes
+    const grassy = (x, y) => { const b = S.biomeAt(x, y); return b !== 'desert' && b !== 'snow' && S.coastDist(x, y) > 40; };
+    for (let n = 0; n < 150; n++) {
       const x = ox + r() * TILE, y = oy + r() * TILE;
       const dark = r() < 0.55;
+      if (!grassy(x, y)) continue;
       g.strokeStyle = dark ? 'rgba(48, 88, 30, 0.45)' : 'rgba(164, 206, 110, 0.35)';
       g.lineWidth = 1.4;
       g.beginPath(); g.moveTo(x, y);
       g.lineTo(x + (r() - 0.5) * 4, y - 4 - r() * 4); g.stroke();
-    }
-    for (let n = 0; n < 3; n++) {
-      const x = ox + r() * TILE, y = oy + r() * TILE, rr = 40 + r() * 60;
-      const grad = g.createRadialGradient(x, y, 0, x, y, rr);
-      grad.addColorStop(0, 'rgba(140, 116, 72, 0.22)'); grad.addColorStop(1, 'rgba(140, 116, 72, 0)');
-      g.fillStyle = grad; g.beginPath(); g.arc(x, y, rr, 0, TAU); g.fill();
     }
     // lakes: sand rim, deep-to-shallow water, ripples and a foam line
     if (W && W.obstacles) {
@@ -244,8 +240,11 @@
         const rr = R * (0.84 + r() * 0.16);
         pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
       }
-      gg.fillStyle = 'rgba(16, 24, 12, 0.35)';
-      gg.beginPath(); gg.ellipse(R * 0.14, R * 0.2, R * 1.02, R * 0.92, 0, 0, TAU); gg.fill();
+      // contact shadow: a darker core under the stone plus a soft outer halo
+      gg.fillStyle = 'rgba(16, 24, 12, 0.18)';
+      gg.beginPath(); gg.ellipse(R * 0.2, R * 0.26, R * 1.12, R * 1.0, 0, 0, TAU); gg.fill();
+      gg.fillStyle = 'rgba(16, 24, 12, 0.36)';
+      gg.beginPath(); gg.ellipse(R * 0.14, R * 0.2, R * 0.98, R * 0.88, 0, 0, TAU); gg.fill();
       const path = () => { gg.beginPath(); pts.forEach(([x, y], i) => (i ? gg.lineTo(x, y) : gg.moveTo(x, y))); gg.closePath(); };
       path(); gg.fillStyle = '#c3c6ba'; gg.fill();
       gg.save(); path(); gg.clip();
@@ -253,6 +252,13 @@
       gg.beginPath(); gg.ellipse(-R * 0.3, -R * 0.34, R * 0.6, R * 0.42, -0.5, 0, TAU); gg.fill();
       gg.fillStyle = '#9ea194';
       gg.beginPath(); gg.ellipse(R * 0.36, R * 0.38, R * 0.72, R * 0.4, -0.5, 0, TAU); gg.fill();
+      // volume: light from the top-left, the far side falls into shade
+      const vol = gg.createRadialGradient(-R * 0.35, -R * 0.4, R * 0.1, 0, 0, R * 1.15);
+      vol.addColorStop(0, 'rgba(255, 255, 255, 0.18)'); vol.addColorStop(0.6, 'rgba(0, 0, 0, 0)'); vol.addColorStop(1, 'rgba(20, 26, 22, 0.45)');
+      gg.fillStyle = vol; gg.fillRect(-R * 1.2, -R * 1.2, R * 2.4, R * 2.4);
+      // a few chips and a dark crack for texture
+      gg.fillStyle = 'rgba(70, 74, 64, 0.35)';
+      for (let i = 0; i < 4; i++) { gg.beginPath(); gg.arc((r() - 0.5) * R * 1.2, (r() - 0.5) * R * 1.2, R * (0.05 + r() * 0.05), 0, TAU); gg.fill(); }
       gg.restore();
       gg.strokeStyle = '#686b62'; gg.lineWidth = 2.4; gg.lineJoin = 'round';
       path(); gg.stroke();
@@ -325,6 +331,11 @@
       const base = { wood: '#dccfae', stone: '#d4d7d9', metal: '#c9d2dc' }[mat] || '#d4d7d9';
       const seam = { wood: 'rgba(120,96,60,0.28)', stone: 'rgba(90,96,102,0.30)', metal: 'rgba(70,84,100,0.30)' }[mat];
       gg.fillStyle = base; gg.fillRect(0, 0, P, P);
+      // a slightly different tint per board or tile, so the floor is not one flat colour
+      for (let j = 0; j < P; j += 30) {
+        if (mat === 'wood') { gg.fillStyle = 'rgba(90,60,30,' + (r() * 0.07).toFixed(3) + ')'; gg.fillRect(0, j, P, 30); }
+        else for (let i = 0; i < P; i += 30) { gg.fillStyle = 'rgba(40,48,56,' + (r() * 0.07).toFixed(3) + ')'; gg.fillRect(i, j, 30, 30); }
+      }
       gg.strokeStyle = seam; gg.lineWidth = 2;
       if (mat === 'wood') {
         // long floorboards running one way
@@ -337,6 +348,15 @@
         }
       }
       gg.fillStyle = 'rgba(255,255,255,0.10)'; gg.fillRect(0, 0, P, P);
+      // inner edge shade: the floor sits below the grass, so its border darkens
+      const eW = 14;
+      const edge = (x, y, w, h, x1, y1, x2, y2) => {
+        const gr = gg.createLinearGradient(x1, y1, x2, y2);
+        gr.addColorStop(0, 'rgba(0,0,0,0.30)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        gg.fillStyle = gr; gg.fillRect(x, y, w, h);
+      };
+      edge(0, 0, P, eW, 0, 0, 0, eW); edge(0, P - eW, P, eW, 0, P, 0, P - eW);
+      edge(0, 0, eW, P, 0, 0, eW, 0); edge(P - eW, 0, eW, P, P, 0, P - eW, 0);
     }
     if (stage > 0) {
       gg.strokeStyle = 'rgba(10, 6, 2, 0.85)'; gg.lineWidth = 3; gg.lineCap = 'round';

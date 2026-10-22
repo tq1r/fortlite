@@ -120,7 +120,7 @@ kbd {
 .ammoSep, #ammoRes { font-family: var(--display); font-size: 22px; color: var(--dim); }
 #ammoBox label { display: block; font-size: 10px; letter-spacing: 1.5px; font-weight: 800; color: var(--dim); }
 
-#hudHint { position: absolute; left: 18px; bottom: 18px; display: flex; gap: 14px; font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.78); }
+#hudHint { position: absolute; left: 18px; bottom: 18px; display: flex; gap: 14px; font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.92); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 8px rgba(0, 0, 0, 0.45); }
 #hudHint span { display: flex; align-items: center; gap: 2px; }
 
 /* minimap, top right */
@@ -204,7 +204,7 @@ button.big { font-size: 22px; padding: 12px 34px; }
 .topRight { display: flex; gap: 8px; }
 
 .menuMain {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  position: absolute; left: 50%; top: 60%; transform: translate(-50%, -50%);
   width: 440px; display: flex; flex-direction: column; gap: 10px;
 }
 .fieldLabel { font-family: var(--display); font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3); margin-top: 8px; }
@@ -347,3 +347,19 @@ button.ghost.rowBtn { font-size: 12px; }
 #downBox.down { border-left-color: #ff5566; }
 #downBox .dBar { height: 6px; margin-top: 8px; background: rgba(255, 255, 255, 0.18); }
 #downBox .dBar i { display: block; height: 100%; width: 0; background: #1cb8ff; }
+
+/* menu hero: the title block over the menu, with a slow light sweep across the wordmark */
+.menuHero { position: absolute; left: 0; right: 0; top: 9%; text-align: center; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.heroKicker { font-family: var(--display); font-size: 14px; letter-spacing: 4px; text-transform: uppercase; color: #bfeaff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+.heroTitle {
+  font-family: var(--display); font-style: italic; font-weight: 400; font-size: clamp(64px, 11vw, 116px); line-height: 1; letter-spacing: 3px;
+  background-image: linear-gradient(110deg, rgba(255, 255, 255, 0) 42%, rgba(255, 255, 255, 0.95) 50%, rgba(255, 255, 255, 0) 58%), linear-gradient(180deg, #ffffff 0%, #d9f2ff 55%, #7fd4ff 100%);
+  background-size: 260% 100%, 100% 100%; background-repeat: no-repeat;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 2px #0a3a66; paint-order: stroke fill;
+  filter: drop-shadow(0 6px 0 rgba(4, 27, 56, 0.55)) drop-shadow(0 0 22px rgba(120, 220, 255, 0.35));
+  animation: heroGleam 6s ease-in-out infinite;
+}
+.heroSub { font-size: 14px; font-weight: 700; letter-spacing: 1px; color: rgba(255, 255, 255, 0.85); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3); margin-top: 6px; }
+@keyframes heroGleam { 0%, 55% { background-position: 130% 0, 0 0; } 100% { background-position: -30% 0, 0 0; } }
+@media (prefers-reduced-motion: reduce) { .heroTitle { animation: none; } }
