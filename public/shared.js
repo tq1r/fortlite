@@ -7,9 +7,36 @@
   const S = {};
 
   // ---- World -------------------------------------------------
-  S.WORLD = 4200;            // world is WORLD x WORLD pixels (about 2x the area of the old 3000 map)
+  S.WORLD = 10000;           // world is WORLD x WORLD pixels; the island is inside, sea outside
   S.GRID = 60;               // wall grid cell size
   S.CELLS = S.WORLD / S.GRID;
+
+  // ---- Island and sea (same on server and client, so movement and drawing agree) ----
+  // The island is a blob with a wiggly coast. Everything outside the coastline is sea.
+  S.LAND = { cx: S.WORLD / 2, cy: S.WORLD / 2, R: S.WORLD * 0.455 };
+  const COAST_PH = [0.6, 2.1, 4.0, 1.3];
+  // distance from the island centre to the coastline in the direction of (x, y)
+  S.coastRadius = (x, y) => {
+    const a = Math.atan2(y - S.LAND.cy, x - S.LAND.cx);
+    const k = 1 + 0.075 * Math.sin(3 * a + COAST_PH[0]) + 0.05 * Math.sin(5 * a + COAST_PH[1])
+      + 0.03 * Math.sin(9 * a + COAST_PH[2]) + 0.018 * Math.sin(17 * a + COAST_PH[3]);
+    return S.LAND.R * k;
+  };
+  // >0 inland, <0 at sea
+  S.coastDist = (x, y) => S.coastRadius(x, y) - Math.hypot(x - S.LAND.cx, y - S.LAND.cy);
+  S.isLand = (x, y) => S.coastDist(x, y) > 0;
+  // Biomes depend only on position, so the client can draw them without server data.
+  // North: snowy mountains. West: forest. East: desert. South-west: marsh. The rest: plains.
+  const biomeWobble = (x, y) => Math.sin(x / 1300 + 0.7) * Math.cos(y / 1100 - 0.4) + 0.5 * Math.sin((x + y) / 700 + 2.1);
+  S.biomeAt = (x, y) => {
+    const dx = (x - S.LAND.cx) / S.LAND.R, dy = (y - S.LAND.cy) / S.LAND.R;
+    const n = biomeWobble(x, y) * 0.18;
+    if (dy + n < -0.42) return 'snow';
+    if (dx + n < -0.38) return 'forest';
+    if (dx + n > 0.36) return 'desert';
+    if (dy + n > 0.34 && dx + n < 0.05) return 'swamp';
+    return 'plains';
+  };
   S.PLAYER_R = 20;
   S.SPEED = 250;             // px/sec (top speed)
   S.ACCEL = 1700;            // px/sec^2 speeding up toward the input direction
@@ -21,11 +48,11 @@
   // ---- Spawn island, Battle Bus, skydive -------------------------
   S.ISLAND = { x: 2100, y: 2100, r: 560 };   // lobby island (round, ringed by water)
   S.ISLAND_SPEED = 260;                       // walk speed on the island
-  S.BUS = { span: 2350, speed: 330 };         // bus flies from -span to +span through map centre
+  S.BUS = { span: 5600, speed: 330 };         // bus flies from -span to +span through map centre (about 35 s)
   S.FALL_TIME = 4.2;                          // seconds of skydive before landing
   S.FALL_SPEED = 230;                         // steering speed while skydiving
   S.FALL_CARRY = 0.45;                        // share of bus velocity carried into the dive
-  S.POI_COUNT = 14;                            // named points of interest per map
+  S.POI_COUNT = 22;                            // named points of interest per map
   // player phases (sent as small ints in snapshots)
   S.PH = { ground: 0, bus: 1, fall: 2 };
 
@@ -84,16 +111,17 @@
   S.HARVEST_BONUS = 20;        // extra mats when destroying
 
   // ---- Storm -----------------------------------------------------
+  // radii scale with the world (the old map was 4200 wide); times are about 40% longer
   S.STORM = {
-    grace: 22, startR: 3080,
+    grace: 30, startR: 6000,
     phases: [
-      { wait: 18, shrink: 16, r: 1750, dps: 1 },
-      { wait: 14, shrink: 14, r: 1092, dps: 2 },
-      { wait: 12, shrink: 12, r: 658,  dps: 4 },
-      { wait: 10, shrink: 10, r: 378,  dps: 6 },
-      { wait: 9,  shrink: 9,  r: 196,  dps: 8 },
-      { wait: 8,  shrink: 8,  r: 63,   dps: 10 },
-      { wait: 8,  shrink: 10, r: 0,    dps: 12 },
+      { wait: 25, shrink: 22, r: 4170, dps: 1 },
+      { wait: 20, shrink: 20, r: 2600, dps: 2 },
+      { wait: 17, shrink: 17, r: 1570, dps: 4 },
+      { wait: 14, shrink: 14, r: 900,  dps: 6 },
+      { wait: 13, shrink: 13, r: 470,  dps: 8 },
+      { wait: 11, shrink: 11, r: 150,  dps: 10 },
+      { wait: 11, shrink: 14, r: 0,    dps: 12 },
     ],
   };
 
@@ -121,8 +149,8 @@
   // ---- Match -----------------------------------------------------
   S.LOBBY_COUNTDOWN = 15;   // seconds after first human joins
   S.END_TIME = 14;          // seconds on end screen
-  S.MAX_PLAYERS = 30;       // humans + bots
-  S.BOT_FILL = 12;          // fill matches to this many players
+  S.MAX_PLAYERS = 100;      // humans + bots
+  S.BOT_FILL = 100;         // fill matches to this many players
 
   // ---- Bot names (all original — no borrowed IP) ------------------
   S.BOT_NAMES = [
@@ -171,6 +199,12 @@
       if (y - r < 0) { y = r; moved = true; }
       if (x + r > size) { x = size - r; moved = true; }
       if (y + r > size) { y = size - r; moved = true; }
+      // the sea: keep the circle on the island by projecting it back inside the coastline
+      {
+        const cdx = x - S.LAND.cx, cdy = y - S.LAND.cy, dd = Math.hypot(cdx, cdy);
+        const lim = S.coastRadius(x, y) - r - 3;
+        if (dd > lim && dd > 0) { const k = Math.max(0, lim) / dd; x = S.LAND.cx + cdx * k; y = S.LAND.cy + cdy * k; moved = true; }
+      }
       const obs = world.obstaclesNear(x, y, r + 40);
       for (let i = 0; i < obs.length; i++) {
         const o = obs[i];

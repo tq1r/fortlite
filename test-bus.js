@@ -185,7 +185,8 @@ async function main() {
   const meS = s1.p.find(p => p[0] === welcome.id);
   ok(meS && meS[11] === S.PH.bus, 'I ride the bus (phase bus)');
   ok(s1.st === null, 'no storm while the bus flies');
-  ok(s1.bus && Math.abs(s1.bus.x) < 5000, `bus route visible (${s1.bus.x}, ${s1.bus.y})`);
+  // the bus flies a straight route through the map centre; it must be on that route (within its span)
+  ok(s1.bus && Math.hypot(s1.bus.x - S.WORLD / 2, s1.bus.y - S.WORLD / 2) <= S.BUS.span + 60, `bus route visible (${s1.bus.x}, ${s1.bus.y})`);
   ok(s1.p.filter(p => p[11] === S.PH.bus).length === s1.p.length, 'everyone starts on the bus');
 
   // no shooting from the bus
@@ -224,7 +225,7 @@ async function main() {
   ok(!!landed, 'phase returns to ground after landing');
 
   // ---- 5. match goes live when the route ends ----
-  const live = await A.wait(m => m.t === 'ev' && m.k === 'live', 25000);
+  const live = await A.wait(m => m.t === 'ev' && m.k === 'live', 45000);   // the route is about 34 s long
   ok(!!live, 'match goes live after the bus route');
   // every bot has jumped by then (forced at the end of the route); give the last divers time to land
   await sleep(4800);

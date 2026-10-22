@@ -51,6 +51,15 @@
 
   // ---------- ground tiles (grass + sand + water, baked from the world's lakes) ----------
   const DARK = [74, 116, 50], MID = [104, 150, 66], LIGHT = [132, 176, 84];
+  // per-biome ground palettes: [dark, mid, light]
+  const PAL = {
+    plains: [[74, 116, 50], [104, 150, 66], [132, 176, 84]],
+    forest: [[44, 78, 38], [60, 98, 48], [78, 112, 58]],
+    swamp:  [[68, 88, 56], [86, 106, 64], [104, 120, 74]],
+    desert: [[200, 176, 116], [216, 192, 134], [228, 206, 150]],
+    snow:   [[196, 206, 218], [220, 228, 236], [238, 242, 246]],
+  };
+  const SEA_DEEP = [34, 90, 146], SEA_SHALLOW = [58, 128, 180], BEACH = [214, 194, 146];
   function bakeTile(tx, ty) {
     const c = mk(TILE_PX, TILE_PX);
     const g = c.getContext('2d');
@@ -63,18 +72,39 @@
         const wx = ox + i / K, wy = oy + j / K;
         const v = fbm(wx, wy);
         const sp = (h2(wx * 3.1, wy * 2.7) - 0.5) * 9;
+        const cd = S.coastDist(wx, wy);
         let r, gg, b;
-        if (v < 0.5) { const t = v * 2; r = lerp(DARK[0], MID[0], t); gg = lerp(DARK[1], MID[1], t); b = lerp(DARK[2], MID[2], t); }
-        else { const t = (v - 0.5) * 2; r = lerp(MID[0], LIGHT[0], t); gg = lerp(MID[1], LIGHT[1], t); b = lerp(MID[2], LIGHT[2], t); }
+        let pal, tt;
+        if (cd < 0) {
+          // sea: deep water, lighter shallows near the coast, faint ripples
+          const sh = Math.max(0, Math.min(1, (-cd) / 140));
+          const rip = (h2(wx * 0.05 + 3, wy * 0.05 - 7) - 0.5) * 6;
+          r = lerp(SEA_SHALLOW[0], SEA_DEEP[0], sh) + rip; gg = lerp(SEA_SHALLOW[1], SEA_DEEP[1], sh) + rip; b = lerp(SEA_SHALLOW[2], SEA_DEEP[2], sh) + rip;
+          const k = (j * TILE_PX + i) * 4;
+          d[k] = r; d[k + 1] = gg; d[k + 2] = b; d[k + 3] = 255;
+          continue;
+        }
+        if (cd < 34) {
+          // beach
+          r = BEACH[0] + sp * 0.5; gg = BEACH[1] + sp * 0.5; b = BEACH[2] + sp * 0.4;
+          const k = (j * TILE_PX + i) * 4;
+          d[k] = r; d[k + 1] = gg; d[k + 2] = b; d[k + 3] = 255;
+          continue;
+        }
+        const bio = S.biomeAt(wx, wy);
+        pal = PAL[bio] || PAL.plains;
+        if (v < 0.5) { tt = v * 2; r = lerp(pal[0][0], pal[1][0], tt); gg = lerp(pal[0][1], pal[1][1], tt); b = lerp(pal[0][2], pal[1][2], tt); }
+        else { tt = (v - 0.5) * 2; r = lerp(pal[1][0], pal[2][0], tt); gg = lerp(pal[1][1], pal[2][1], tt); b = lerp(pal[1][2], pal[2][2], tt); }
         const k = (j * TILE_PX + i) * 4;
         d[k] = r + sp; d[k + 1] = gg + sp; d[k + 2] = b + sp * 0.6; d[k + 3] = 255;
       }
     }
     g.putImageData(img, 0, 0);
     g.setTransform(K, 0, 0, K, -ox * K, -oy * K);
-    // grass blades and a few dirt patches
+    // grass blades and a few dirt patches (land only)
     const r = rnd(tx * 7919 + ty * 104729 + 17);
-    for (let n = 0; n < 150; n++) {
+    const landy = S.biomeAt(ox + TILE / 2, oy + TILE / 2) !== 'desert' && S.biomeAt(ox + TILE / 2, oy + TILE / 2) !== 'snow';
+    for (let n = 0; n < (landy ? 150 : 0); n++) {
       const x = ox + r() * TILE, y = oy + r() * TILE;
       const dark = r() < 0.55;
       g.strokeStyle = dark ? 'rgba(48, 88, 30, 0.45)' : 'rgba(164, 206, 110, 0.35)';
@@ -121,7 +151,7 @@
   }
   function drawGround(g, l, t, r, b) {
     bakedThisFrame = 0;
-    const size = W ? W.size : 3000;
+    const size = W ? W.size : S.WORLD;
     const n = Math.ceil(size / TILE);
     const x0 = Math.max(0, Math.floor(l / TILE)), x1 = Math.min(n - 1, Math.floor(r / TILE));
     const y0 = Math.max(0, Math.floor(t / TILE)), y1 = Math.min(n - 1, Math.floor(b / TILE));

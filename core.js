@@ -38,6 +38,7 @@ const G = {
   matchTime: 0,
   bus: null,                 // {sx,sy,dx,dy,len,speed,dur,t,a}
   pois: [],                  // named points of interest {id,n,k,x,y,r}
+  roads: [],                 // road polylines {pts: [[x,y],...]}
   players: [],               // all match participants (humans + bots)
   obstacles: [],
   obstacleById: new Map(),
@@ -80,15 +81,55 @@ function rebucketObstacles() {
 // ============================================================
 //  Map generation
 // ============================================================
+// The map: an island in a sea. Biomes (snow, forest, desert, swamp, plains) come from
+// S.biomeAt, which the client also uses to draw the ground. Here we place POIs on land,
+// connect them with roads, run rivers from the mountains to the sea (with bridges where
+// they cross roads), and scatter trees, rocks and bushes in biome-weighted clusters.
+// Roads and building areas are kept clear of obstacles, so the map reads clearly.
+const ROAD_HALF = 26;   // road half-width (drawn 52 px wide)
+
 function genMap(seed) {
   const rand = S.mulberry32(seed);
   G.obstacles = []; G.obstacleById = new Map(); G.walls = new Map();
-  G.chests = []; G.loot = new Map(); G.floors = []; G.bullets = [];
+  G.chests = []; G.loot = new Map(); G.floors = []; G.bullets = []; G.roads = [];
   const W = S.WORLD;
+  const AREA = (W / 4200) ** 2;   // density reference: the old 4200 map
+  const LOOT_SCALE = AREA * 1.5;  // more loot per area: 100 players
+
+  // ---- spatial index for placement checks (obstacles only exist here while generating)
+  const CELL = 200, MAX_R = 130;
+  const grid = new Map();
+  const ckey = (cx, cy) => cx * 100003 + cy;
+  const nearObs = (x, y, rad) => {
+    const out = [];
+    const cx0 = Math.floor((x - rad) / CELL), cx1 = Math.floor((x + rad) / CELL);
+    const cy0 = Math.floor((y - rad) / CELL), cy1 = Math.floor((y + rad) / CELL);
+    for (let cx = cx0; cx <= cx1; cx++) for (let cy = cy0; cy <= cy1; cy++) {
+      const b = grid.get(ckey(cx, cy));
+      if (b) for (const o of b) out.push(o);
+    }
+    return out;
+  };
+
+  // ---- roads: polylines, kept clear of obstacles
+  const roadSegs = [];
+  const roadDist = (x, y) => {
+    let best = 1e9;
+    for (const [x1, y1, x2, y2] of roadSegs) {
+      const vx = x2 - x1, vy = y2 - y1;
+      const l2 = vx * vx + vy * vy || 1;
+      const t = Math.max(0, Math.min(1, ((x - x1) * vx + (y - y1) * vy) / l2));
+      const d = Math.hypot(x - (x1 + vx * t), y - (y1 + vy * t));
+      if (d < best) best = d;
+    }
+    return best;
+  };
 
   const okSpot = (x, y, r, minDist) => {
     if (x < 80 + r || y < 80 + r || x > W - 80 - r || y > W - 80 - r) return false;
-    for (const o of G.obstacles) {
+    if (S.coastDist(x, y) < r + 40) return false;
+    if (roadDist(x, y) < r + ROAD_HALF + 14) return false;
+    for (const o of nearObs(x, y, r + minDist + MAX_R)) {
       if (S.dist2(x, y, o.x, o.y) < (minDist + o.r) ** 2) return false;
     }
     return true;
@@ -96,6 +137,8 @@ function genMap(seed) {
   const addObs = (type, x, y, r, hp, mat) => {
     const o = { id: nextEntityId++, type, x, y, r, hp, maxHp: hp, mat: mat || null };
     G.obstacles.push(o); G.obstacleById.set(o.id, o);
+    const k = ckey(Math.floor(x / CELL), Math.floor(y / CELL));
+    let b = grid.get(k); if (!b) { b = []; grid.set(k, b); } b.push(o);
     return o;
   };
 
@@ -126,16 +169,24 @@ function genMap(seed) {
   const floorFree = (gx0, gy0, cw, ch) => {
     if (gx0 < 2 || gy0 < 2 || gx0 + cw > S.CELLS - 2 || gy0 + ch > S.CELLS - 2) return false;
     const x0 = gx0 * S.GRID - 40, y0 = gy0 * S.GRID - 40, x1 = (gx0 + cw) * S.GRID + 40, y1 = (gy0 + ch) * S.GRID + 40;
-    return !G.floors.some(f => !(f.x + f.w < x0 || f.x > x1 || f.y + f.h < y0 || f.y > y1));
+    if (G.floors.some(f => !(f.x + f.w < x0 || f.x > x1 || f.y + f.h < y0 || f.y > y1))) return false;
+    // the whole footprint must be on land and off the roads
+    for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1], [(x0 + x1) / 2, (y0 + y1) / 2]]) {
+      if (S.coastDist(px, py) < 60 || roadDist(px, py) < ROAD_HALF + 40) return false;
+    }
+    return true;
   };
 
-  // ---- named points of interest (POIs): clusters of buildings with better loot ----
+  // ---- points of interest on land, spread out
   const POI_POOL = [
     ['Rustwater Yard', 'industrial'], ['Gull Point Light', 'coast'], ['Thornwick Farm', 'farm'],
     ['Cinder Hollow', 'quarry'], ['Lantern Market', 'town'], ['Hightower Depot', 'town'],
-    ['Mossgate Ruins', 'ruins'], ['Fogbank Harbor', 'coast'],
-    ['Saltmarsh Works', 'industrial'], ['Ironbark Lodge', 'farm'], ['Brightwell Station', 'town'],
-    ['Old Kiln Row', 'ruins'], ['Tallreed Mill', 'farm'], ['Eastwind Depot', 'industrial'],
+    ['Mossgate Ruins', 'ruins'], ['Fogbank Harbor', 'coast'], ['Saltmarsh Works', 'industrial'],
+    ['Ironbark Lodge', 'farm'], ['Brightwell Station', 'town'], ['Old Kiln Row', 'ruins'],
+    ['Tallreed Mill', 'farm'], ['Eastwind Depot', 'industrial'], ['Frostspire Camp', 'quarry'],
+    ['Dune Hollow', 'ruins'], ['Blackfen Shacks', 'farm'], ['Glasswater Dock', 'coast'],
+    ['Northcrest Lift', 'town'], ['Sandsong Oasis', 'town'], ['Willow Bend', 'farm'],
+    ['Redrock Quarry', 'quarry'],
   ];
   for (let i = POI_POOL.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -143,18 +194,48 @@ function genMap(seed) {
   }
   G.pois = [];
   let poiTries = 0;
-  while (G.pois.length < S.POI_COUNT && poiTries++ < 3000) {
-    const x = 330 + rand() * (W - 660), y = 330 + rand() * (W - 660);
-    if (G.pois.some(p => S.dist(p.x, p.y, x, y) < 760)) continue;
+  while (G.pois.length < S.POI_COUNT && poiTries++ < 20000) {
+    const x = rand() * W, y = rand() * W;
+    if (!S.isLand(x, y) || S.coastDist(x, y) < 420) continue;
+    if (x < 500 || y < 500 || x > W - 500 || y > W - 500) continue;
+    if (G.pois.some(p => S.dist(p.x, p.y, x, y) < 980)) continue;
     const [n, k] = POI_POOL[G.pois.length];
     G.pois.push({ id: G.pois.length, n, k, x, y, r: 280 });
   }
+
+  // ---- roads: connect the POIs with a minimum spanning tree, bent a little
+  if (G.pois.length > 1) {
+    const inTree = [0], done = new Set([0]);
+    while (done.size < G.pois.length) {
+      let best = null, bd = 1e18;
+      for (const a of done) for (let b = 0; b < G.pois.length; b++) {
+        if (done.has(b)) continue;
+        const d = S.dist2(G.pois[a].x, G.pois[a].y, G.pois[b].x, G.pois[b].y);
+        if (d < bd) { bd = d; best = [a, b]; }
+      }
+      done.add(best[1]); inTree.push(best[1]);
+      const A = G.pois[best[0]], B = G.pois[best[1]];
+      const L = S.dist(A.x, A.y, B.x, B.y);
+      const pts = [[A.x, A.y]];
+      const steps = Math.max(2, Math.round(L / 1100));
+      const nx = -(B.y - A.y) / L, ny = (B.x - A.x) / L;
+      for (let s = 1; s < steps; s++) {
+        const t = s / steps, off = (rand() - 0.5) * 380;
+        pts.push([A.x + (B.x - A.x) * t + nx * off, A.y + (B.y - A.y) * t + ny * off]);
+      }
+      pts.push([B.x, B.y]);
+      G.roads.push({ pts: pts.map(p => [Math.round(p[0]), Math.round(p[1])]) });
+      for (let i = 0; i + 1 < pts.length; i++) roadSegs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]]);
+    }
+  }
+
+  // ---- buildings in each POI, kept off the roads
   for (const poi of G.pois) {
     const nB = 2 + (rand() < 0.5 ? 1 : 0);
     let placed = 0, tries = 0;
-    while (placed < nB && tries++ < 60) {
+    while (placed < nB && tries++ < 80) {
       const cw = 4 + Math.floor(rand() * 3), ch = 3 + Math.floor(rand() * 2);
-      const a = rand() * Math.PI * 2, d = 40 + rand() * 170;
+      const a = rand() * Math.PI * 2, d = 60 + rand() * 170;
       const cx = poi.x + Math.cos(a) * d, cy = poi.y + Math.sin(a) * d;
       const gx0 = Math.round((cx - cw * S.GRID / 2) / S.GRID), gy0 = Math.round((cy - ch * S.GRID / 2) / S.GRID);
       if (!floorFree(gx0, gy0, cw, ch)) continue;
@@ -163,73 +244,122 @@ function genMap(seed) {
       placed++;
     }
   }
-  // a few lone houses between the POIs
-  for (let b = 0; b < 3; b++) {
-    for (let tries = 0; tries < 80; tries++) {
-      const cw = 3 + Math.floor(rand() * 2), ch = 3;
-      const gx0 = 3 + Math.floor(rand() * (S.CELLS - 6 - cw)), gy0 = 3 + Math.floor(rand() * (S.CELLS - 6 - ch));
-      if (!floorFree(gx0, gy0, cw, ch)) continue;
-      if (G.pois.some(p => S.dist(p.x, p.y, (gx0 + cw / 2) * S.GRID, (gy0 + ch / 2) * S.GRID) < 420)) continue;
-      placeBuilding(gx0, gy0, cw, ch, ['wood', 'stone', 'metal'][Math.floor(rand() * 3)], 1);
-      break;
-    }
+  // a few lone houses next to roads
+  let houses = 0;
+  for (let tries = 0; tries < 4000 && houses < Math.round(10 * AREA / 5); tries++) {
+    const x = rand() * W, y = rand() * W;
+    const rd = roadDist(x, y);
+    if (rd < 150 || rd > 420) continue;
+    const cw = 3 + Math.floor(rand() * 2), ch = 3;
+    const gx0 = Math.floor(x / S.GRID), gy0 = Math.floor(y / S.GRID);
+    if (!floorFree(gx0, gy0, cw, ch)) continue;
+    if (G.pois.some(p => S.dist(p.x, p.y, x, y) < 520)) continue;
+    placeBuilding(gx0, gy0, cw, ch, ['wood', 'stone', 'metal'][Math.floor(rand() * 3)], 1);
+    houses++;
   }
 
-  // ---- water lakes (avoid buildings) ----
-  const nLakes = Math.round((4 + Math.floor(rand() * 3)) * (W / 3000) ** 2);
-  let lakeTries = 0;
-  for (let l = 0; l < nLakes && lakeTries < 60; l++) {
-    lakeTries++;
-    const lx = 350 + rand() * (W - 700), ly = 350 + rand() * (W - 700);
-    if (G.floors.some(f => S.dist2(f.x + f.w / 2, f.y + f.h / 2, lx, ly) < 380 * 380)) { l--; continue; }
+  // ---- lakes and rivers (water is impassable; bridges where roads cross)
+  const bridgeNear = (x, y) => roadDist(x, y) < ROAD_HALF + 22;
+  const onBuilding = (x, y) => G.floors.some(f => x > f.x - 40 && x < f.x + f.w + 40 && y > f.y - 40 && y < f.y + f.h + 40);
+  const nLakes = Math.round(6 * AREA / 5.7) + 2;
+  let lakesMade = 0;
+  for (let t = 0; t < 400 && lakesMade < nLakes; t++) {
+    const lx = rand() * W, ly = rand() * W;
+    if (!S.isLand(lx, ly) || S.coastDist(lx, ly) < 500) continue;
+    if (bridgeNear(lx, ly) || onBuilding(lx, ly)) continue;
+    if (S.biomeAt(lx, ly) === 'desert' || S.biomeAt(lx, ly) === 'snow') continue;
     const nBlobs = 4 + Math.floor(rand() * 5);
     for (let b = 0; b < nBlobs; b++) {
       const a = rand() * Math.PI * 2, d = rand() * 130;
-      addObs('water', lx + Math.cos(a) * d, ly + Math.sin(a) * d, 55 + rand() * 45, 1, null);
+      const x = lx + Math.cos(a) * d, y = ly + Math.sin(a) * d;
+      if (roadDist(x, y) < ROAD_HALF + 60) continue;
+      addObs('water', x, y, 55 + rand() * 45, 1, null);
+    }
+    lakesMade++;
+  }
+  // rivers start in the north mountains and run down to the sea
+  const nRivers = 2;
+  for (let rv = 0; rv < nRivers; rv++) {
+    let sx = 0, sy = 0, ok = false;
+    for (let t = 0; t < 2000 && !ok; t++) {
+      sx = rand() * W; sy = rand() * W;
+      ok = S.biomeAt(sx, sy) === 'snow' && S.coastDist(sx, sy) > 900 && roadDist(sx, sy) > 300;
+    }
+    if (!ok) continue;
+    // flow direction: outward from the island centre, with a slow wobble
+    const base = Math.atan2(sy - S.LAND.cy, sx - S.LAND.cx);
+    const wob = rand() * 6.28, amp = 0.35 + rand() * 0.3;
+    let x = sx, y = sy;
+    for (let step = 0; step < 400; step++) {
+      if (!S.isLand(x, y) && step > 10) break;
+      if (S.coastDist(x, y) < 0) break;
+      const a = base + Math.sin(step * 0.08 + wob) * amp * 0.4;
+      if (!bridgeNear(x, y) && !onBuilding(x, y)) addObs('water', x, y, 34, 1, null);
+      x += Math.cos(a) * 60; y += Math.sin(a) * 60;
+      if (x < 0 || y < 0 || x > W || y > W) break;
     }
   }
 
-  // trees (clustered), rocks, crates, bushes
-  const scatter = (type, count, r, hp, mat, cluster) => {
-    let placed = 0, tries = 0;
-    while (placed < count && tries < count * 40) {
-      tries++;
-      let x, y;
-      if (cluster && placed % 5 === 0) { // cluster seed point
-        x = 120 + rand() * (W - 240); y = 120 + rand() * (W - 240);
-      } else if (cluster) {
-        const seed = G.obstacles[G.obstacles.length - 1];
-        x = seed.x + (rand() - 0.5) * 320; y = seed.y + (rand() - 0.5) * 320;
-      } else { x = 120 + rand() * (W - 240); y = 120 + rand() * (W - 240); }
-      if (!okSpot(x, y, r, 40)) continue;
-      // don't place inside building floors
+  // ---- trees, rocks, bushes: clustered by biome
+  // cluster seeds make forests, mountain ranges and bush patches instead of an even scatter
+  const seeds = (kind, count, sigma) => {
+    const out = [];
+    for (let t = 0; t < count * 60 && out.length < count; t++) {
+      const x = rand() * W, y = rand() * W;
+      if (!S.isLand(x, y) || S.coastDist(x, y) < 300) continue;
+      if (S.biomeAt(x, y) === kind) out.push({ x, y, s: sigma });
+    }
+    return out;
+  };
+  const forestSeeds = seeds('forest', 26, 520);
+  const mountainSeeds = seeds('snow', 18, 420);
+  const bushSeeds = seeds('plains', 30, 340);
+  const clusterW = (list, x, y) => {
+    let w = 0;
+    for (const s of list) { const d2 = S.dist2(x, y, s.x, s.y); w += Math.exp(-d2 / (2 * s.s * s.s)); }
+    return Math.min(1, w);
+  };
+  const TREE_P = { forest: 1.0, plains: 0.22, swamp: 0.6, desert: 0.05, snow: 0.08 };
+  const ROCK_P = { snow: 1.0, desert: 0.45, plains: 0.1, forest: 0.07, swamp: 0.05 };
+  const BUSH_P = { plains: 0.6, forest: 0.45, swamp: 0.4, desert: 0.12, snow: 0.03 };
+
+  const scatterByBiome = (type, target, r0, r1, hp, mat, probs, weightFn, tries) => {
+    let placed = 0;
+    for (let t = 0; t < tries && placed < target; t++) {
+      const x = 120 + rand() * (W - 240), y = 120 + rand() * (W - 240);
+      if (!S.isLand(x, y)) continue;
+      const p = (probs[S.biomeAt(x, y)] || 0) * weightFn(x, y);
+      if (rand() > p) continue;
+      const r = r0 + rand() * (r1 - r0);
+      if (!okSpot(x, y, r, 36)) continue;
       if (G.floors.some(f => x > f.x - 30 && x < f.x + f.w + 30 && y > f.y - 30 && y < f.y + f.h + 30)) continue;
       addObs(type, x, y, r, hp, mat); placed++;
     }
+    return placed;
   };
-  // counts scale with the map area so the density stays the same as the old 3000 map
-  const AREA = (W / 3000) ** 2;
-  scatter('tree', Math.round(85 * AREA), 26, 200, 'wood', true);
-  scatter('rock', Math.round(40 * AREA), 30, 250, 'stone', false);
-  scatter('crate', Math.round(16 * AREA), 26, 250, 'metal', false);
-  scatter('bush', Math.round(42 * AREA), 30, 999, null, true);
+  const treeTarget = Math.round(130 * AREA);
+  scatterByBiome('tree', treeTarget, 24, 30, 200, 'wood', TREE_P, (x, y) => 0.12 + 0.88 * clusterW(forestSeeds, x, y), 400000);
+  scatterByBiome('rock', Math.round(34 * AREA), 30, 34, 250, 'stone', ROCK_P, (x, y) => 0.25 + 0.75 * clusterW(mountainSeeds, x, y), 300000);
+  // mountain boulders: larger rocks in the snow
+  scatterByBiome('rock', Math.round(22 * AREA), 58, 96, 420, 'stone', { snow: 1.0 }, (x, y) => 0.2 + 0.8 * clusterW(mountainSeeds, x, y), 200000);
+  scatterByBiome('bush', Math.round(55 * AREA), 28, 32, 999, null, BUSH_P, (x, y) => 0.2 + 0.8 * clusterW(bushSeeds, x, y), 300000);
 
-  // open-field chests
-  for (let i = 0; i < Math.round(16 * (W / 3000) ** 2); i++) {
-    let tries = 0;
-    while (tries++ < 200) {
+  // open-field chests and crates
+  for (let i = 0; i < Math.round(16 * AREA * 0.9); i++) {
+    for (let tries = 0; tries < 300; tries++) {
       const x = 160 + rand() * (W - 320), y = 160 + rand() * (W - 320);
       if (okSpot(x, y, 34, 60)) { G.chests.push({ id: nextEntityId++, x, y, open: false }); break; }
     }
   }
+  scatterByBiome('crate', Math.round(20 * AREA), 26, 26, 250, 'metal', { plains: 1, forest: 0.6, swamp: 0.6, desert: 1, snow: 0.6 }, () => 1, 100000);
 
   // floor loot
   const roll = (arr) => { let t = 0; for (const a of arr) t += a[1]; let r = rand() * t; for (const a of arr) { r -= a[1]; if (r <= 0) return a[0]; } return arr[0][0]; };
   const floorRarity = () => roll([[0, 50], [1, 30], [2, 15], [3, 5]]);
-  const nFloor = 85;
+  const nFloor = Math.round(85 * LOOT_SCALE);
   for (let i = 0; i < nFloor; i++) {
     let tries = 0;
-    while (tries++ < 200) {
+    while (tries++ < 300) {
       const x = 120 + rand() * (W - 240), y = 120 + rand() * (W - 240);
       if (!okSpot(x, y, 20, 20)) continue;
       const kind = roll([['weapon', 45], ['consum', 25], ['ammo', 20], ['mats', 10]]);
@@ -357,15 +487,18 @@ function lobbyMode() {
   return duo > solo ? 'duo' : 'solo';
 }
 
-function lobbyState() {
+function lobbyState(forClient) {
   const players = [];
   for (const c of clients.values()) players.push({ id: c.id, name: c.name, team: c.team, bot: false, mode: c.modeChoice || 'solo' });
   return {
     t: 'lobby', state: G.state, cd: Math.max(0, Math.ceil(G.countdown)),
     players, maxPlayers: S.MAX_PLAYERS, mode: lobbyMode(),
+    waiting: !!forClient && G.state !== 'lobby' && !forClient.player,
   };
 }
-function broadcastLobby() { broadcast(lobbyState()); }
+// each client gets its own lobby state: a client who joined while a match is running
+// is told it is waiting for the next match (it is not dropped into spectating)
+function broadcastLobby() { for (const c of clients.values()) sendTo(c, lobbyState(c)); }
 
 function rosterMsg() {
   return G.players.map(p => ({ id: p.id, name: p.name, team: p.team, bot: p.bot }));
@@ -383,6 +516,7 @@ function startMsg(forClient) {
       loot: [...G.loot.values()].map(serializeLoot),
       storm: { grace: STORM_GRACE, phases: stormPhases, startR: STORM_CFG.startR },
       pois: G.pois.map(p => ({ i: p.id, n: p.n, k: p.k, x: Math.round(p.x), y: Math.round(p.y), r: p.r })),
+      roads: G.roads.map(r => r.pts),
     },
     players: rosterMsg(),
     you: forClient ? forClient.id : null,
@@ -1516,7 +1650,8 @@ function tick() {
 
     // flush events
     if (evQueue.length) {
-      for (const e of evQueue) broadcast({ t: 'ev', ...e });
+      // match events go only to clients in the match (waiting clients are in the lobby)
+      for (const e of evQueue) { const m = JSON.stringify({ t: 'ev', ...e }); for (const c of clients.values()) if (c.player && c.ws && !c.ws.closed) c.ws.send(m); }
       evQueue = [];
     }
     // snapshot (bus and match)
@@ -1524,7 +1659,7 @@ function tick() {
       const snap = buildSnapshot();
       const s = JSON.stringify(snap);
       for (const c of clients.values()) {
-        if (!c.ws || c.ws.closed) continue;
+        if (!c.ws || c.ws.closed || !c.player) continue;
         c.ws.send(s);
         // private state
         const p = c.player;
@@ -1600,13 +1735,9 @@ function acceptSocket(conn, account) {
           }
         };
         log(`Client joined: ${client.name} (${clients.size} connected)`);
-        sendTo(client, { t: 'welcome', id: client.id, state: G.state, ver: 1 });
-        if (G.state === 'bus' || G.state === 'active' || G.state === 'end') {
-          sendTo(client, startMsg(null));
-          sendTo(client, lobbyState());
-        } else {
-          broadcastLobby();
-        }
+        // always start on the spawn island; a match already running is joined at the next start
+        sendTo(client, { t: 'welcome', id: client.id, state: 'lobby', ver: 1 });
+        broadcastLobby();
       }
       return;
     }

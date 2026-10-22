@@ -631,15 +631,17 @@ function killfeed(e) {
 // ============================================================
 function updateLobby(m) {
   if (mode === 'menu' || mode === 'play') return;
-  if (m.state === 'lobby') {
+  if (m.state === 'lobby' || m.waiting) {
     mode = 'lobby';
     show('lobby');
     hudVisible(false);
-    $('lobbyCountdown').textContent = m.cd;
-    $('lobbyTip').textContent = m.mode === 'duo'
-      ? 'Duos: pick a team color with a friend (2 per team), or hit Auto to get paired up!'
-      : 'Walk the spawn island while the bus loads. Press SPACE over the map to jump, then steer onto a POI!';
-  } else if (m.state !== 'lobby' && mode === 'lobby') {
+    $('lobbyCountdown').textContent = m.waiting ? '--' : m.cd;
+    $('lobbyTip').textContent = m.waiting
+      ? 'A match is in progress. You drop in with the next one.'
+      : m.mode === 'duo'
+        ? 'Duos: pick a team color with a friend (2 per team), or hit Auto to get paired up!'
+        : 'Walk the spawn island while the bus loads. Press SPACE over the map to jump, then steer onto a POI!';
+  } else if (mode === 'lobby') {
     // a match is running while we wait — spectate it
     mode = 'spec';
     show(null);
