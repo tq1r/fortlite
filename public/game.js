@@ -1106,14 +1106,17 @@ function render(now, rt) {
     FLArt.treeShadow(g, o);
   }
 
-  // walls
+  // walls: shadows first, then the blocks, so they read as raised above the floors
+  const wallsInView = [];
   for (const w of world.walls.values()) {
     const x = w.gx * S.GRID, y = w.gy * S.GRID;
     if (!inView(x + 30, y + 30, 60)) continue;
     const hpf = w.hp / w.maxHp;
     const stage = hpf < 0.25 ? 3 : hpf < 0.5 ? 2 : hpf < 0.75 ? 1 : 0;
-    FLArt.wall(g, x, y, w.mat, stage);
+    wallsInView.push({ x, y, mat: w.mat, stage });
   }
+  FLArt.wallShadows(g, wallsInView);
+  for (const w of wallsInView) FLArt.wall(g, w.x, w.y, w.mat, w.stage);
 
   // players
   const focus = camFocus;

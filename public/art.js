@@ -295,12 +295,16 @@
       }
     }
     if (!flat) {
-      gg.strokeStyle = 'rgba(0,0,0,0.5)'; gg.lineWidth = 4;
-      gg.strokeRect(2, 2, WALL_PX - 4, WALL_PX - 4);
-      gg.fillStyle = 'rgba(0,0,0,0.18)'; gg.fillRect(0, WALL_PX - 6, WALL_PX, 6);
+      // a raised block: lit top-left edge, shaded bottom-right edge, heavy dark outline
+      gg.fillStyle = 'rgba(255,255,255,0.22)'; gg.fillRect(0, 0, WALL_PX, 5); gg.fillRect(0, 0, 5, WALL_PX);
+      gg.fillStyle = 'rgba(0,0,0,0.36)'; gg.fillRect(0, WALL_PX - 12, WALL_PX, 12); gg.fillRect(WALL_PX - 12, 0, 12, WALL_PX);
+      gg.strokeStyle = '#15120c'; gg.lineWidth = 6;
+      gg.strokeRect(3, 3, WALL_PX - 6, WALL_PX - 6);
     } else {
-      gg.strokeStyle = 'rgba(0,0,0,0.3)'; gg.lineWidth = 2;
-      gg.strokeRect(1, 1, WALL_PX - 2, WALL_PX - 2);
+      // ground-level floor: lighter, flat, only thin seams between cells
+      gg.fillStyle = 'rgba(255,255,255,0.08)'; gg.fillRect(0, 0, WALL_PX, WALL_PX);
+      gg.strokeStyle = 'rgba(0,0,0,0.28)'; gg.lineWidth = 3;
+      gg.strokeRect(1.5, 1.5, WALL_PX - 3, WALL_PX - 3);
     }
     if (stage > 0) {
       gg.strokeStyle = 'rgba(20, 12, 6, 0.8)'; gg.lineWidth = 3; gg.lineCap = 'round';
@@ -324,6 +328,11 @@
   // x, y is the top-left corner of the cell in world units
   function wall(g, x, y, mat, stage) {
     blit(g, wallSprite(mat, stage, false), x + 30, y + 30, 60);
+  }
+  // cast shadows of all walls, drawn before any wall so one wall's shadow never sits on another's top
+  function wallShadows(g, list) {
+    g.fillStyle = 'rgba(0,0,0,0.28)';
+    for (const w of list) g.fillRect(w.x + 8, w.y + 10, 60, 60);
   }
   function floorCell(g, x, y, mat) {
     blit(g, wallSprite(mat, 0, true), x + 30, y + 30, 60);
@@ -394,7 +403,7 @@
   }
 
   window.FLArt = {
-    reset, drawGround, floors, wall,
+    reset, drawGround, floors, wall, wallShadows,
     treeShadow, treeCanopy, bush, rock, crate,
     player, stormPattern,
   };
