@@ -27,45 +27,36 @@
 
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
-  <div id="stormBar"><span class="stormLbl">THE FADE</span><span id="stormTxt">-</span></div>
+  <div id="stormBar"><span class="stormIco"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 7v5.4l3.4 2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span><span class="stormLbl">The Fade</span><span id="stormTxt">-</span></div>
 
   <div id="topRightInfo">
-    <div class="trBox"><span id="aliveNum">0</span><label>ALIVE</label></div>
-    <div class="trBox"><span id="killsNum">0</span><label>ELIMS</label></div>
+    <div class="trBox"><span class="trIco"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4.2" fill="currentColor"/><path d="M3.5 21c0-4.6 3.8-7.4 8.5-7.4s8.5 2.8 8.5 7.4z" fill="currentColor"/></svg></span><b id="aliveNum">0</b></div>
+    <div class="trBox"><span class="trIco"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5" stroke="currentColor" stroke-width="2.4"/></svg></span><b id="killsNum">0</b></div>
   </div>
   <div id="killfeed"></div>
 
   <div id="dropHint" class="hidden"></div>
 
   <div id="bottomCenter">
+    <div id="buildHint" class="hidden">Build <b id="buildMatTxt">WOOD</b> <span class="dim">Z X C to switch</span></div>
     <div id="useBar" class="hidden"><div id="useFill"></div><span id="useTxt">Using</span></div>
-    <div id="shieldBar"><div id="shieldFill"></div><span id="shieldTxt">0</span></div>
-    <div id="hpBar"><div id="hpFill"></div><span id="hpTxt">100</span></div>
+    <div id="bars">
+      <div id="shieldBar"><div id="shieldFill"></div><span id="shieldTxt">0</span></div>
+      <div id="hpBar"><div id="hpFill"></div><span id="hpTxt">100</span></div>
+    </div>
     <div id="slots"></div>
-    <div id="buildHint" class="hidden">BUILD <b id="buildMatTxt">WOOD</b> <span class="dim">Z X C to switch</span></div>
   </div>
 
   <div id="bottomRight">
-    <div id="ammoBox" class="hidden"><span id="ammoMag">0</span><span class="ammoSep">/</span><span id="ammoRes">0</span><label id="ammoType">LIGHT</label></div>
     <div id="mats">
       <div class="mat" id="mat-wood"><span class="matDot wood"></span><b id="matN-wood">0</b></div>
       <div class="mat" id="mat-stone"><span class="matDot stone"></span><b id="matN-stone">0</b></div>
       <div class="mat" id="mat-metal"><span class="matDot metal"></span><b id="matN-metal">0</b></div>
     </div>
-    <div id="controls">
-      <span><kbd>WASD</kbd></span><span>move</span>
-      <span><kbd>Mouse</kbd></span><span>aim</span>
-      <span><kbd>LMB</kbd></span><span>shoot, swing, place</span>
-      <span><kbd>Q</kbd></span><span>build mode</span>
-      <span><kbd>ZXC</kbd></span><span>wood, stone, metal</span>
-      <span><kbd>1-5</kbd></span><span>slots</span>
-      <span><kbd>R</kbd></span><span>reload</span>
-      <span><kbd>E</kbd></span><span>chest, interact</span>
-      <span><kbd>G</kbd></span><span>drop</span>
-      <span><kbd>Space</kbd></span><span>jump from the bus</span>
-      <span><kbd>Esc</kbd></span><span>menu</span>
-    </div>
+    <div id="ammoBox" class="hidden"><div class="ammoNums"><b id="ammoMag">0</b><span class="ammoSep">/</span><span id="ammoRes">0</span></div><label id="ammoType">LIGHT</label></div>
   </div>
+
+  <div id="hudHint"><span><kbd>Esc</kbd> menu</span><span><kbd>M</kbd> map</span><span><kbd>G</kbd> drop</span><span><kbd>E</kbd> interact</span></div>
 </div>
 
 <!-- ============ ESC SIDE MENU ============ -->
@@ -81,6 +72,20 @@
   <button id="pauseResume" class="pmBtn">Resume</button>
   <button id="pauseMute" class="pmBtn">Mute sound</button>
   <button id="pauseLeave" class="pmBtn danger">Leave match</button>
+  <div class="pmSec">Controls</div>
+  <div class="pmControls">
+    <div><kbd>WASD</kbd><span>Move</span></div>
+    <div><kbd>Mouse</kbd><span>Aim</span></div>
+    <div><kbd>LMB</kbd><span>Shoot, swing, place</span></div>
+    <div><kbd>Space</kbd><span>Jump from the bus</span></div>
+    <div><kbd>Q</kbd><span>Build mode</span></div>
+    <div><kbd>Z X C</kbd><span>Wood, stone, metal</span></div>
+    <div><kbd>1-5</kbd><span>Slots</span></div>
+    <div><kbd>R</kbd><span>Reload</span></div>
+    <div><kbd>E</kbd><span>Chest, interact</span></div>
+    <div><kbd>G</kbd><span>Drop</span></div>
+    <div><kbd>M</kbd><span>Map</span></div>
+  </div>
 </div>
 <div id="banner" class="hidden"></div>
 <div id="toasts"></div>
@@ -96,18 +101,17 @@
 <div id="menu" class="overlay">
   <header class="menuTop">
     <span class="wordmark">FORTLITE</span>
+    <nav class="menuNav">
+      <button class="navBtn" id="navProfile">Profile</button>
+      <button class="navBtn" id="navCosmetics">Outfits</button>
+      <button class="navBtn" id="navFriends">Friends</button>
+      <button class="navBtn" id="navLeaders">Leaderboard</button>
+    </nav>
     <div class="topRight">
       <button id="qualityBtn" class="ghost">Quality: High</button>
       <button id="acctTop" class="ghost">Sign in</button>
     </div>
   </header>
-
-  <nav class="menuNav">
-    <button class="navBtn" id="navProfile">Profile</button>
-    <button class="navBtn" id="navCosmetics">Outfits</button>
-    <button class="navBtn" id="navFriends">Friends</button>
-    <button class="navBtn" id="navLeaders">Leaderboard</button>
-  </nav>
 
   <main class="menuMain">
     <label class="fieldLabel" for="nameInput">Name</label>
@@ -123,13 +127,7 @@
     <div id="menuStatus"></div>
   </main>
 
-  <footer class="menuFoot">
-    <div class="controls">
-      <div><b>WASD</b>move</div><div><b>Mouse</b>aim</div><div><b>LMB</b>shoot, swing, place</div>
-      <div><b>E</b>chest, grab</div><div><b>Q</b>build mode</div><div><b>ZXC</b>wood, stone, metal</div>
-      <div><b>1-5</b>slots</div><div><b>R</b>reload</div><div><b>G</b>drop</div><div><b>M</b>mute</div>
-    </div>
-  </footer>
+  <footer class="menuFoot"><span>Controls are in the Esc menu during a match</span></footer>
 </div>
 
 <!-- ============ ACCOUNT ============ -->

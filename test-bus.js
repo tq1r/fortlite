@@ -186,7 +186,8 @@ async function main() {
   ok(meS && meS[11] === S.PH.bus, 'I ride the bus (phase bus)');
   ok(s1.st === null, 'no storm while the bus flies');
   // the bus flies a straight route through the map centre; it must be on that route (within its span)
-  ok(s1.bus && Math.hypot(s1.bus.x - S.WORLD / 2, s1.bus.y - S.WORLD / 2) <= S.BUS.span + 60, `bus route visible (${s1.bus.x}, ${s1.bus.y})`);
+  // makeBus() shifts the route centre by up to +-350 on each axis, so allow that offset (about 495) on top of the span
+ok(s1.bus && Math.hypot(s1.bus.x - S.WORLD / 2, s1.bus.y - S.WORLD / 2) <= S.BUS.span + 520, `bus route visible (${s1.bus.x}, ${s1.bus.y})`);
   ok(s1.p.filter(p => p[11] === S.PH.bus).length === s1.p.length, 'everyone starts on the bus');
 
   // no shooting from the bus
