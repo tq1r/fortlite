@@ -51,6 +51,7 @@
   S.BUS = { span: 6160, speed: 600 };         // bus flies from -span to +span through map centre (about 19 s)
   S.FALL_TIME = 4.2;                          // seconds of skydive before landing
   S.FALL_SPEED = 230;                         // steering speed while skydiving
+  S.KNOCK = { bleed: 30, revive: 3.5, range: 85, hp: 30 }; // duo: knocked seconds to bleed out, hold-E revive time, reach, hp after revive
   S.FALL_CARRY = 0.45;                        // share of bus velocity carried into the dive
   S.POI_COUNT = 22;                            // named points of interest per map
   // player phases (sent as small ints in snapshots)

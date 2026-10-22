@@ -21,7 +21,7 @@ class WSClient {
     const key = crypto.randomBytes(16).toString('base64');
     this.sock = net.connect(+u.port, u.hostname, () => {
       this.sock.write(
-        `GET ${u.pathname} HTTP/1.1\r\nHost: ${u.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+        `GET ${u.pathname}${u.search} HTTP/1.1\r\nHost: ${u.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
         `Sec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
     });
     this.buf = Buffer.alloc(0);
@@ -148,25 +148,20 @@ async function moveToward(c, id, tx, ty, rad, timeoutMs = 25000) {
 
 async function main() {
   console.log(`Gameplay test on :${PORT} (no bots, no storm)...`);
-  const server = spawn('node', ['server.js', '--port', PORT, '--bots', 0, '--nostorm', '--nobus', '--fast'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn('node', ['server.js', '--port', PORT, '--bots', 0, '--nostorm', '--nobus', '--fast', '--dev-party'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
   const kill = () => { try { server.kill('SIGKILL'); } catch (_) {} };
   process.on('exit', kill);
   server.stdout.on('data', d => process.stdout.write('  [srv] ' + d));
   server.stderr.on('data', d => process.stderr.write('  [srv-err] ' + d));
   await sleep(600);
 
-  const A = new WSClient(`ws://127.0.0.1:${PORT}/ws`, 'A');
+  // both in one duo party (dev-party stand-in for a real party): one team, so the friendly-fire check applies
+  const A = new WSClient(`ws://127.0.0.1:${PORT}/ws?mode=duo&party=GP1&partner=Bob&name=Alice`, 'A');
   A.onopen = () => A.send({ t: 'hello', name: 'Alice' });
-  const B = new WSClient(`ws://127.0.0.1:${PORT}/ws`, 'B');
+  const B = new WSClient(`ws://127.0.0.1:${PORT}/ws?mode=duo&party=GP1&partner=Alice&name=Bob`, 'B');
   B.onopen = () => B.send({ t: 'hello', name: 'Bob' });
-  // both on RED team (duo mode) for friendly-fire test
   const wa = await A.wait(m => m.t === 'welcome');
   const wb = await B.wait(m => m.t === 'welcome');
-  A.send({ t: 'mode', m: 'duo' });
-  B.send({ t: 'mode', m: 'duo' });
-  await sleep(200);
-  A.send({ t: 'team', team: 1 });
-  B.send({ t: 'team', team: 1 });
   await sleep(200);
   const start = await A.wait(m => m.t === 'start', 20000);
   await B.wait(m => m.t === 'start');
@@ -269,14 +264,15 @@ async function main() {
   await moveToward(A, wa.id, pB4.x, pB4.y, 260, 30000);
   const pA5 = posOf(A, wa.id), pB5 = posOf(B, wb.id);
   const aimB = Math.atan2(pB5.y - pA5.y, pB5.x - pA5.x);
-  const hpB0 = (B.last(m => m.t === 'snap' && m.p.some(p => p[0] === wb.id)).p.find(p => p[0] === wb.id))[4];
+  // bots share this match and may shoot B, so only hits whose attacker is A count here
+  const aHitsB = () => A.msgs.filter(m => m.t === 'ev' && m.k === 'dmg' && m.kid === wa.id && m.vid === wb.id).length;
+  const hitsBefore = aHitsB();
   A.send({ t: 'input', x: 0, y: 0, aim: aimB, f: true, b: false });
   await sleep(1200);
   A.send({ t: 'input', x: 0, y: 0, aim: aimB, f: false, b: false });
   await sleep(400);
-  const snapB = B.last(m => m.t === 'snap' && m.p.some(p => p[0] === wb.id));
-  const hpB1 = snapB ? snapB.p.find(p => p[0] === wb.id)[4] : 0;
-  ok(hpB1 === hpB0, `friendly fire off (B hp ${hpB0} → ${hpB1})`);
+  const hitsAfter = aHitsB();
+  ok(hitsAfter === hitsBefore, `friendly fire off (A hit B ${hitsAfter - hitsBefore} times)`);
 
   // ---- 5. verify shot events + mag decrement with a fresh burst
   const shotsBy = () => A.msgs.filter(m => m.t === 'ev' && m.k === 'shot' && m.id === wa.id).length;

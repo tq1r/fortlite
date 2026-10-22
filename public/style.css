@@ -341,3 +341,9 @@ button.big { font-size: 22px; padding: 12px 34px; }
 button.ghost.rowBtn { font-size: 12px; }
 .modeBtn.locked { opacity: 0.45; filter: grayscale(0.7); cursor: not-allowed; }
 .modeBtn.locked:hover { filter: grayscale(0.7); }
+
+/* knocked (duo): bleed-out timer and the hold-E revive prompt */
+#downBox { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); min-width: 320px; padding: 10px 18px; background: rgba(10, 14, 30, 0.8); border-left: 4px solid #ffc83d; color: #fff; font-weight: 800; font-size: 15px; text-align: center; text-shadow: 0 2px 0 #000; pointer-events: none; z-index: 6; }
+#downBox.down { border-left-color: #ff5566; }
+#downBox .dBar { height: 6px; margin-top: 8px; background: rgba(255, 255, 255, 0.18); }
+#downBox .dBar i { display: block; height: 100%; width: 0; background: #1cb8ff; }

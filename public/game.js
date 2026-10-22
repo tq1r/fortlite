@@ -329,6 +329,7 @@ function onSnap(m) {
     if (p.buf.length > 30) p.buf.shift();
     p.hp = a[4]; p.shield = a[5]; p.team = a[6]; p.wv = a[7]; p.kills = a[10];
     p.ph = a[11] || 0; p.alt = (a[12] || 0) / 100; p.outfit = a[13] || 0;
+    p.kn = !!a[14]; p.bleed = a[15] || 0; p.revPct = a[16] || 0;
     if (id === myId && me) { me.serverX = a[1]; me.serverY = a[2]; me.ph = p.ph; me.alt = p.alt; }
   }
   if (m.bus) {
@@ -453,6 +454,17 @@ function onEv(e) {
       if (onMe) { vignette = 1; sfx.hurt(); shake(2.2); const p = players.get(myId); if (p) p.hitT = 0.25; }
       if (mineHit && !onMe) { hitmark = 0.18; sfx.hitmark(); shake(0.4); }
       const p = players.get(e.vid); if (p) p.hitT = 0.25;
+      break;
+    }
+    case 'knock': {
+      killfeed({ kname: e.kname, kteam: e.kteam, vname: e.vname, vteam: e.vteam, w: 'knock' });
+      if (e.vid === myId) { banner('KNOCKED: get revived!', '#ffd76e', 2.4); sfx.hurt(); shake(3); }
+      break;
+    }
+    case 'revive': {
+      killfeed({ kname: e.rname, kteam: e.kteam, vname: e.vname, vteam: e.vteam, w: 'revive' });
+      if (e.vid === myId) banner('REVIVED', '#8fe54a', 1.8);
+      else if (e.rid === myId) banner('Revived ' + e.vname, '#8fe54a', 1.8);
       break;
     }
     case 'kill': {
@@ -642,7 +654,7 @@ function toast(text) {
   $('toasts').append(t);
   setTimeout(() => t.remove(), 2200);
 }
-const KF_WEAPON = { pick: 'Pickaxe', storm: 'The Fade', left: 'Disconnected' };
+const KF_WEAPON = { pick: 'Pickaxe', storm: 'The Fade', left: 'Disconnected', knock: 'Knocked', revive: 'Revived', bleed: 'Bled out' };
 function killfeed(e) {
   const kf = $('killfeed');
   const div = document.createElement('div');
@@ -736,8 +748,33 @@ const SVGI = {
   medkit: '<svg viewBox="0 0 32 32"><rect x="4" y="7" width="24" height="20" rx="4" fill="#e8ecdf" stroke="#9aa48f" stroke-width="1.8"/><rect x="14" y="11" width="4" height="12" fill="#e04444"/><rect x="10" y="15" width="12" height="4" fill="#e04444"/></svg>',
 };
 const CON_ICON = { mini: SVGI.mini, shield: SVGI.shield, medkit: SVGI.medkit };
+// knocked: the bleed-out timer. Next to a downed teammate: the hold-E revive prompt with progress.
+function updateDownBox() {
+  const box = $('downBox');
+  if (!box) return;
+  let txt = '', pct = 0, cls = '';
+  if (me && me.kn) {
+    txt = 'KNOCKED. A teammate can revive you · ' + (me.bleed || 0) + 's';
+    pct = me.revPct || 0; cls = 'down';
+  } else if (me && me.team > 0 && mode === 'play') {
+    let best = null, bd = 85 * 85;
+    for (const q of players.values()) {
+      if (q === me || !q.kn || q.team !== me.team) continue;
+      const d = (q.x - me.x) ** 2 + (q.y - me.y) ** 2;
+      if (d < bd) { bd = d; best = q; }
+    }
+    if (best) { txt = 'Hold E to revive ' + best.name; pct = best.revPct || 0; }
+  }
+  box.classList.toggle('hidden', !txt);
+  if (!txt) return;
+  box.classList.toggle('down', cls === 'down');
+  box.firstChild.textContent = txt;
+  box.lastChild.firstChild.style.width = pct + '%';
+}
+
 function updateHUD() {
   if (!you) return;
+  updateDownBox();
   // bars
   $('hpFill').style.width = Math.max(0, you.hp) + '%';
   $('hpTxt').textContent = Math.max(0, Math.round(you.hp));
@@ -894,11 +931,12 @@ function sendInput(force) {
   const now = performance.now();
   if (!force && now - lastInputSend < 25) return;
   lastInputSend = now;
-  const [mx, my] = inputAxes();
+  let [mx, my] = inputAxes();
   if (onIsland) { send({ t: 'input', x: mx, y: my, aim: lme.aim }); return; }
+  if (me.kn) { mx = 0; my = 0; }
   // no shooting or building while on the bus or in the air
   inSeq++;
-  send({ t: 'input', n: inSeq, x: mx, y: my, aim: me.aim, f: mouse.fire && me.ph === S.PH.ground, b: buildMode && me.ph === S.PH.ground });
+  send({ t: 'input', n: inSeq, x: mx, y: my, aim: me.aim, f: mouse.fire && me.ph === S.PH.ground && !me.kn, b: buildMode && me.ph === S.PH.ground, r: keys.has('KeyE') });
   if (me.ph === S.PH.ground) {
     inHist.push({ n: inSeq, x: me.x, y: me.y });
     if (inHist.length > 240) inHist.shift();
@@ -965,7 +1003,7 @@ function predictSelf(dt) {
   // aim from mouse
   const sp = worldToScreen(me.x, me.y);
   me.aim = Math.atan2(mouse.y - sp[1], mouse.x - sp[0]);
-  if (me.ph !== S.PH.ground) return;   // bus / skydive: follow the server
+  if (me.ph !== S.PH.ground || me.kn) return;   // bus / skydive / knocked: follow the server
   const [mx, my] = inputAxes();
   const speed = S.SPEED * (you && you.use > 0 ? S.SPEED_USE : 1);
   // same acceleration model as the server (shared.js stepVel)
@@ -1432,6 +1470,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   if (sw != null) swing = 1 - sw / 0.3;
 
   FLArt.player(g, x, y, S.OUTFITS[p.outfit || 0].color, p.id);
+  if (p.kn) { g.fillStyle = 'rgba(150,10,20,0.45)'; g.beginPath(); g.ellipse(x, y, S.PLAYER_R + 9, S.PLAYER_R - 2, 0, 0, TAU); g.fill(); }
   if (teamCol) { g.strokeStyle = teamCol; g.lineWidth = 3; g.beginPath(); g.arc(x, y, S.PLAYER_R + 3, 0, TAU); g.stroke(); }
 
     // weapon + hands (over body, rotated toward aim)
@@ -1476,7 +1515,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   g.font = '700 13px "Segoe UI", sans-serif';
   g.textAlign = 'center';
   g.fillStyle = 'rgba(0,0,0,0.6)';
-  const tag = p.team > 0 ? '#' + p.team + ' ' + p.name : p.name;
+  const tag = (p.team > 0 ? '#' + p.team + ' ' + p.name : p.name) + (p.kn ? '  DOWN ' + (p.bleed || 0) + 's' : '');
   g.fillText(tag, x + 1, y - 36);
   g.fillStyle = isMe ? '#ffd76e' : (teamCol ? teamCol : '#ffffff');
   g.fillText(tag, x, y - 37);
@@ -1491,6 +1530,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
     g.fillStyle = '#4aa7e8';
     g.fillRect(x - bw / 2, y - 36, bw * Math.min(1, p.shield / 100), 3);
   }
+  if (p.kn && p.revPct > 0) { g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x - bw / 2, y + 22, bw, 5); g.fillStyle = '#1cb8ff'; g.fillRect(x - bw / 2, y + 22, bw * p.revPct / 100, 5); }
   g.globalAlpha = 1;
 }
 

@@ -452,6 +452,7 @@ function makePlayer(id, name, team, isBot) {
     stormAcc: 0,
     lastShotT: -99, lastDmgT: -99,
     ai: isBot ? newBotAI() : null,
+    kn: false, knT: 0, knBy: null, revT: 0, revSeen: -9,   // knocked (duo): bleed timer, revive progress
     stuckT: 0, lastX: 0, lastY: 0,
     ph: S.PH.ground, fallT: 0, alt: 0, fallVx: 0, fallVy: 0, vx: 0, vy: 0,
   };
@@ -476,6 +477,7 @@ function botSkill() {
 function newBotAI() {
   return {
     mode: 'wander', thinkT: Math.random() * 0.3,
+    jumpS: undefined, poi: null,
     skill: botSkill(),
     target: null, reactT: 0,
     mem: null,                    // last seen enemy: {x, y, vx, vy, t}
@@ -621,18 +623,47 @@ function landPlayer(p) {
   p.lastX = p.x; p.lastY = p.y;
   ev({ k: 'land', id: p.id, x: Math.round(p.x), y: Math.round(p.y) });
 }
+// how far a dive drifts along the bus route: the carried speed decays while falling
+function diveDrift() {
+  const v0 = G.bus.speed * S.FALL_CARRY;
+  return v0 * (1 - Math.exp(-0.9 * S.FALL_TIME)) / 0.9;
+}
+// bus progress along its route, in units (matches busPos)
+function busProgress() { return Math.min(G.bus.t, G.bus.dur) * G.bus.speed; }
+// A bot picks where to land before the bus gets there. It aims for a POI on the route,
+// or (sometimes) a random spot, and jumps once the bus reaches the point the dive drifts from.
+// Nothing ever jumps after the bus has crossed the map.
+function pickDrop(p) {
+  const ai = p.ai, b = G.bus, now = busProgress();
+  const drift = diveDrift();
+  const cands = [];
+  for (const poi of G.pois) {
+    const ox = poi.x - b.sx, oy = poi.y - b.sy;
+    const along = ox * b.dx + oy * b.dy;
+    const perp = Math.abs(ox * b.dy - oy * b.dx);
+    if (perp > 520) continue;                    // too far off the route to steer onto
+    const js = along - drift;
+    if (js < now + 120) continue;                // already passed it
+    cands.push({ poi, js });
+  }
+  let pick = null;
+  if (cands.length && Math.random() < 0.7) pick = cands[(Math.random() * cands.length) | 0];
+  if (pick) {
+    ai.poi = pick.poi;
+    ai.jumpS = pick.js + (Math.random() - 0.5) * 90;   // not every bot lands on the same pixel
+  } else {
+    // a random spot near the middle of the route, still well before the map edge
+    ai.poi = null;
+    ai.jumpS = Math.min(S.BUS.span, now + 300 + Math.random() * 400);
+  }
+}
 // bot brain while riding the bus or skydiving
 function botAir(p, dt) {
   const ai = p.ai, inp = p.input;
   inp.fire = false; inp.build = false;
   if (p.ph === S.PH.bus) {
-    if (ai.jumpT === undefined) {
-      ai.poi = G.pois.length ? G.pois[(Math.random() * G.pois.length) | 0] : null;
-      ai.jumpT = Math.random() < 0.35 ? 1 + Math.random() * Math.max(1, G.bus.dur - 3) : null;
-    }
-    const b = G.bus, q = busPos();
-    const near = ai.poi && S.dist(q.x, q.y, ai.poi.x, ai.poi.y) < 220;
-    if ((ai.jumpT != null && b.t >= ai.jumpT) || near || b.t >= b.dur - 0.05) startFall(p);
+    if (ai.jumpS === undefined) pickDrop(p);
+    if (ai.jumpS != null && busProgress() >= ai.jumpS) startFall(p);
     return;
   }
   if (p.ph === S.PH.fall && ai.poi) {
@@ -771,6 +802,7 @@ function resetToLobby() {
 // ============================================================
 function damagePlayer(victim, amount, attacker, cause) {
   if (!victim.alive || G.state !== 'active' || victim.ph !== S.PH.ground) return;
+  if (victim.kn) { killPlayer(victim, attacker, cause); return; }   // a knocked player can be finished off
   let dmg = amount;
   if (victim.shield > 0) {
     const absorbed = Math.min(victim.shield, dmg);
@@ -781,12 +813,59 @@ function damagePlayer(victim, amount, attacker, cause) {
   if (victim.ai && attacker && attacker !== victim) { victim.ai.hitBy = attacker; victim.ai.hitT = G.matchTime; }
   ev({ k: 'dmg', x: victim.x, y: victim.y, n: Math.round(amount), vid: victim.id, kid: attacker ? attacker.id : null });
   if (attacker && attacker.alive && !attacker.bot) { /* killer feedback handled client side */ }
-  if (victim.hp <= 0) killPlayer(victim, attacker, cause);
+  if (victim.hp <= 0) {
+    if (canKnock(victim, cause)) knockPlayer(victim, attacker);
+    else killPlayer(victim, attacker, cause);
+  }
+}
+
+// ---- knocked states (duo only). A downed player keeps bleeding for S.KNOCK.bleed seconds
+// and is revived by a living teammate who holds E next to them. The storm never knocks.
+// A team is only knocked while the other member is up, so two players are never down at once.
+function canKnock(v, cause) {
+  if (G.mode !== 'duo' || !(v.team > 0) || cause === 'storm') return false;
+  return G.players.some(q => q !== v && q.alive && !q.kn && q.team === v.team);
+}
+function knockPlayer(v, attacker) {
+  v.kn = true; v.knT = S.KNOCK.bleed; v.knBy = attacker || null;
+  v.hp = 0; v.shield = 0; v.revT = 0; v.revSeen = -9;
+  v.pending = []; v.useT = 0; v.reloadT = 0; v.vx = 0; v.vy = 0;
+  v.input.fire = false; v.input.build = false; v.input.mx = 0; v.input.my = 0; v.input.r = false;
+  ev({ k: 'knock', vid: v.id, vname: v.name, vteam: v.team, kid: attacker ? attacker.id : null,
+    kname: attacker ? attacker.name : 'The Fade', kteam: attacker ? attacker.team : 0, x: Math.round(v.x), y: Math.round(v.y) });
+}
+function updateKnocked(p, dt) {
+  const inp = p.input;
+  p.pending = []; inp.fire = false; inp.build = false; inp.mx = 0; inp.my = 0; inp.r = false;
+  // revive progress decays if nobody is reviving any more
+  if (G.matchTime - p.revSeen > 0.25) p.revT = Math.max(0, p.revT - dt * 2);
+  p.knT -= dt;
+  if (p.knT <= 0) killPlayer(p, p.knBy, 'bleed');
+}
+// a living teammate standing still within reach, holding E, revives the nearest knocked teammate
+function updateRevive(p, dt) {
+  const inp = p.input;
+  if (Math.hypot(inp.mx, inp.my) > 0.2) return;
+  let mate = null, md = S.KNOCK.range * S.KNOCK.range;
+  for (const q of G.players) {
+    if (q === p || !q.kn || !q.alive || q.team !== p.team) continue;
+    const d = S.dist2(p.x, p.y, q.x, q.y);
+    if (d < md) { md = d; mate = q; }
+  }
+  if (!mate) return;
+  mate.revT += dt; mate.revSeen = G.matchTime;
+  if (mate.revT >= S.KNOCK.revive) reviveKnocked(mate, p);
+}
+function reviveKnocked(q, by) {
+  q.kn = false; q.knT = 0; q.knBy = null; q.revT = 0;
+  q.hp = S.KNOCK.hp; q.lastDmgT = G.matchTime;
+  ev({ k: 'revive', vid: q.id, vname: q.name, rid: by.id, rname: by.name, vteam: q.team, kteam: by.team, x: Math.round(q.x), y: Math.round(q.y) });
 }
 
 function killPlayer(victim, attacker, cause) {
   if (!victim.alive) return;
   victim.alive = false;
+  victim.kn = false;
   victim.hp = 0;
   victim.placement = G.aliveCount;
   G.aliveCount--;
@@ -814,6 +893,8 @@ function killPlayer(victim, attacker, cause) {
     kid: attacker ? attacker.id : null, kname,
     kteam: attacker ? attacker.team : 0, w: cause || 'storm', bot: victim.bot,
   });
+  // a knocked teammate has no one left to revive them
+  if (victim.team > 0) for (const q of G.players) if (q.alive && q.kn && q.team === victim.team) killPlayer(q, attacker || victim.knBy, 'bleed');
   // win check
   const teams = new Set();
   for (const p of G.players) if (p.alive) teams.add(effTeam(p));
@@ -1152,8 +1233,33 @@ function botSenses(p) {
   return best;
 }
 
+// how far (up to L, in steps) the bot can walk on heading a before walls, trees or rocks stop it
+function freeLen(p, a, L) {
+  const cx = Math.cos(a), cy = Math.sin(a);
+  let free = 0;
+  for (let d = 25; d <= L; d += 25) {
+    const [nx, ny] = S.moveCircle(p.x, p.y, S.PLAYER_R, cx * d, cy * d, world);
+    if (Math.hypot(nx - p.x - cx * d, ny - p.y - cy * d) > 3) break;
+    free = d;
+  }
+  return free;
+}
+// keep the wanted heading when it is open; otherwise take the open heading closest to it
+// (a bot boxed in a room picks the way out, the one with the longest clear run)
+function freeHeading(p, want) {
+  if (freeLen(p, want, 46) >= 46) return want;
+  let best = want, bs = -1e9;
+  for (const off of [0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6, 2.0, -2.0, 2.5, -2.5, Math.PI]) {
+    const a = want + off;
+    const sc = freeLen(p, a, 150) - Math.abs(off) * 40;
+    if (sc > bs) { bs = sc; best = a; }
+  }
+  return best;
+}
+
 function botThink(p, dt) {
   const ai = p.ai, sk = ai.skill;
+  if (p.kn) { p.input.mx = 0; p.input.my = 0; p.input.fire = false; p.input.r = false; return; }
   ai.thinkT -= dt;
   ai.reactT -= dt; ai.strafeT -= dt; ai.panicWallT -= dt; ai.newWanderT -= dt;
   ai.lootT -= dt; ai.idleT -= dt; ai.dodgeCd -= dt;
@@ -1161,7 +1267,7 @@ function botThink(p, dt) {
   ai.thinkT = 0.15 + Math.random() * 0.2;
 
   const inp = p.input;
-  inp.fire = false; inp.build = false;
+  inp.fire = false; inp.build = false; inp.r = false;
   ai.wantFire = false;
 
   // unstick: if the bot keeps pushing and not moving, reverse for a moment
@@ -1185,7 +1291,7 @@ function botThink(p, dt) {
 
   const st = G.storm;
   const distToSafe = S.dist(p.x, p.y, st ? st.tx : S.WORLD / 2, st ? st.ty : S.WORLD / 2);
-  const outsideStorm = st && S.dist(p.x, p.y, st.cx, st.cy) > st.r - 60;
+  const danger = !!st && S.dist(p.x, p.y, st.cx, st.cy) > st.r - 40;   // in the storm: leave now, even mid-fight
 
   // ---- heal when no enemy has been seen for a moment
   const hurt = p.hp < 55 || p.shield < 20;
@@ -1201,7 +1307,11 @@ function botThink(p, dt) {
     if (idx >= 0) { p.sel = idx; startUse(p); }
   }
 
-  if (seen) {
+  // a downed duo partner comes before loot and far-off enemies
+  const mate = (!danger && p.team > 0 && G.mode === 'duo') ? G.players.find(q => q !== p && q.alive && q.kn && q.team === p.team) : null;
+  // a teammate is down: keep reviving unless the enemy is close or has been shooting at us
+  const keepReviving = mate && (!seen || (S.dist(p.x, p.y, seen.x, seen.y) > 90 && G.matchTime - p.lastDmgT > 0.8));
+  if (seen && !danger && !keepReviving) {
     // ---------- fight
     ai.mode = 'fight';
     // best weapon for the fight
@@ -1268,11 +1378,18 @@ function botThink(p, dt) {
       inp.mx = mx / mag; inp.my = my / mag;
       ai.wantFire = p.reloadT <= 0 && td < weapon.range * 0.9;
     }
-  } else if (outsideStorm || (st && distToSafe > st.tr * 0.85)) {
-    // ---------- storm first
+  } else if (danger || (st && distToSafe > st.tr * 0.85 && (st.sh || st.t < 30))) {
+    // ---------- storm first: head for the next circle at full speed, no looting on the way
     ai.mode = 'storm';
-    const a = Math.atan2(st.ty - p.y, st.tx - p.x) + (Math.random() - 0.5) * 0.6;
+    const a = Math.atan2(st.ty - p.y, st.tx - p.x) + (Math.random() - 0.5) * 0.3;
     ai.desAim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
+  } else if (mate) {
+    // ---------- revive: walk to the knocked teammate, stand still and hold E
+    ai.mode = 'revive';
+    const dm = S.dist(p.x, p.y, mate.x, mate.y), a = Math.atan2(mate.y - p.y, mate.x - p.x);
+    ai.desAim = a;
+    if (dm > S.KNOCK.range * 0.6) { inp.mx = Math.cos(a); inp.my = Math.sin(a); }
+    else { inp.mx = 0; inp.my = 0; inp.r = true; }
   } else if (ai.mem && quietFor < 3 && S.dist(p.x, p.y, ai.mem.x, ai.mem.y) > 70) {
     // ---------- search: walk to where the enemy was last seen
     ai.mode = 'search';
@@ -1356,6 +1473,8 @@ function botThink(p, dt) {
     if (p.ammo[at] < 10) p.ammo[at] += 1;
   }
   if (p.stuckT > 0.6) { const t = inp.mx; inp.mx = -inp.my; inp.my = t; p.stuckT = 0.2; }
+  const mv = Math.hypot(inp.mx, inp.my);
+  if (mv > 0.05 && !inp.r) { const fa = freeHeading(p, Math.atan2(inp.my, inp.mx)); inp.mx = Math.cos(fa) * mv; inp.my = Math.sin(fa) * mv; }
   botApplyMove(p, dt);
 }
 
@@ -1485,6 +1604,7 @@ function updateBullets(dt) {
 
 function processPlayer(p, dt) {
   if (!p.alive) return;
+  if (p.kn) { updateKnocked(p, dt); return; }
   // pending actions
   const acts = p.pending; p.pending = [];
   for (const a of acts) {
@@ -1510,6 +1630,7 @@ function processPlayer(p, dt) {
   if (p.ph === S.PH.fall) { updateFall(p, dt); return; }
 
   const inp = p.input;
+  if (inp.r && p.team > 0 && G.state === 'active') updateRevive(p, dt);
   // timers
   if (p.fireCd > 0) p.fireCd -= dt;
   if (p.swingCd > 0) p.swingCd -= dt;
@@ -1576,6 +1697,7 @@ function buildSnapshot() {
       Math.round(p.aim * 100) / 100, Math.round(p.hp), Math.round(p.shield),
       p.team, wv, (Math.abs(p.input.mx) + Math.abs(p.input.my)) > 0.1 ? 1 : 0,
       p.useT > 0 ? 1 : 0, p.kills, p.ph, Math.round(p.alt * 100), p.outfit,
+      p.kn ? 1 : 0, p.kn ? Math.ceil(p.knT) : 0, Math.round(Math.min(1, p.revT / S.KNOCK.revive) * 100),
     ]);
   }
   const st = G.storm;
@@ -1760,6 +1882,7 @@ function acceptSocket(conn, account) {
         i.seq = (+msg.n) | 0;   // input sequence number, echoed back in 'you' so the client can reconcile
         if (msg.f) i.firePulse = true;   // a quick tap must not be lost between ticks
         i.build = !!msg.b;
+        i.r = !!msg.r;   // holding E: revive a knocked teammate if one is in reach
         break;
       }
       case 'act': {
