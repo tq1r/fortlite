@@ -308,15 +308,35 @@ function makePlayer(id, name, team, isBot) {
     ph: S.PH.ground, fallT: 0, alt: 0, fallVx: 0, fallVy: 0, vx: 0, vy: 0,
   };
 }
+// ---- bot brain ---------------------------------------------------------
+// Each bot gets its own temperament so they do not all play the same way.
+// It only knows what it can see (line of sight, bush cover), remembers where it
+// last saw an enemy, turns at a limited speed, leads moving targets, fires in
+// bursts with short pauses, dodges when shot, backs off when hurt and searches
+// the last known spot.
+function botSkill() {
+  const r = Math.random;
+  return {
+    aimSpeed: 3.0 + r() * 3.0,    // rad/s: how fast it turns onto a target
+    jitter: 0.03 + r() * 0.08,    // aim wobble (radians) re-rolled each think
+    react: 0.25 + r() * 0.5,      // seconds before it fires at a newly seen enemy
+    lead: 0.5 + r() * 0.5,        // how much it leads a moving target
+    aggro: r(),                   // 0 cautious .. 1 aggressive
+    strafeHold: 0.8 + r() * 1.4,  // average seconds between strafe direction changes
+  };
+}
 function newBotAI() {
   return {
     mode: 'wander', thinkT: Math.random() * 0.3,
-    target: null, targetSeenT: 0,
-    wx: 0, wy: 0, newWanderT: 0,
-    strafeDir: 1, strafeT: 0,
-    fireT: 0, pauseT: 0,
-    reactT: 0,
-    panicWallT: 0, lootT: 0,
+    skill: botSkill(),
+    target: null, reactT: 0,
+    mem: null,                    // last seen enemy: {x, y, vx, vy, t}
+    hitBy: null, hitT: -99,       // who last damaged this bot, and when
+    curAim: Math.random() * Math.PI * 2, desAim: 0, fireTol: 0.15,
+    wantFire: false, burstT: 0.6, pauseT: 0,
+    strafeDir: 1, strafeT: 0, dodgeCd: 0,
+    panicWallT: 0, lootT: 0, goal: null,
+    idleT: 0, wx: 0, wy: 0, newWanderT: 0,
   };
 }
 
@@ -630,6 +650,7 @@ function damagePlayer(victim, amount, attacker, cause) {
   }
   victim.hp -= dmg;
   victim.lastDmgT = G.matchTime;
+  if (victim.ai && attacker && attacker !== victim) { victim.ai.hitBy = attacker; victim.ai.hitT = G.matchTime; }
   ev({ k: 'dmg', x: victim.x, y: victim.y, n: Math.round(amount), vid: victim.id, kid: attacker ? attacker.id : null });
   if (attacker && attacker.alive && !attacker.bot) { /* killer feedback handled client side */ }
   if (victim.hp <= 0) killPlayer(victim, attacker, cause);
@@ -988,48 +1009,59 @@ function botWantsItem(p, item) {
   return p.slots.indexOf(null, 1) !== -1 || score(item.w, item.r) > myBest;
 }
 
+// what a bot can see: nearest living enemy with a clear line and not hidden in a bush
+function botSenses(p) {
+  let best = null, bd = 1e9;
+  for (const q of G.players) {
+    if (!q.alive || q === p || effTeam(q) === effTeam(p)) continue;
+    const d = S.dist(p.x, p.y, q.x, q.y);
+    if (d > 700 || d >= bd) continue;
+    const shotRecently = (G.matchTime - q.lastShotT) < 1.5;
+    if (d > 130 && !shotRecently && G.obstacles.some(o => o.type === 'bush' && S.dist2(q.x, q.y, o.x, o.y) < 40 * 40)) continue;
+    if (!S.clearSeg(p.x, p.y, q.x, q.y, world)) continue;
+    best = q; bd = d;
+  }
+  return best;
+}
+
 function botThink(p, dt) {
-  const ai = p.ai;
+  const ai = p.ai, sk = ai.skill;
   ai.thinkT -= dt;
-  ai.strafeT -= dt; ai.fireT -= dt; ai.pauseT -= dt; ai.reactT -= dt;
-  ai.panicWallT -= dt; ai.newWanderT -= dt; ai.lootT -= dt;
+  ai.reactT -= dt; ai.strafeT -= dt; ai.panicWallT -= dt; ai.newWanderT -= dt;
+  ai.lootT -= dt; ai.idleT -= dt; ai.dodgeCd -= dt;
   if (ai.thinkT > 0) { botApplyMove(p, dt); return; }
   ai.thinkT = 0.15 + Math.random() * 0.2;
 
   const inp = p.input;
   inp.fire = false; inp.build = false;
+  ai.wantFire = false;
 
-  // --- unstick logic
+  // unstick: if the bot keeps pushing and not moving, reverse for a moment
   const moved = S.dist(p.x, p.y, p.lastX, p.lastY);
   p.lastX = p.x; p.lastY = p.y;
-  if (moved < 1.5 && (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.3) ai.stuckT += 0.2; else ai.stuckT = 0;
+  if (moved < 1.5 && (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.3) p.stuckT += 0.2; else p.stuckT = 0;
 
-  // --- find target
-  let target = null, td = 1e9;
-  for (const q of G.players) {
-    if (!q.alive || q === p || effTeam(q) === effTeam(p)) continue;
-    const d = S.dist(p.x, p.y, q.x, q.y);
-    let maxSee = 640;
-    if (d > maxSee) continue;
-    // bush hiding
-    const inBush = G.obstacles.some(o => o.type === 'bush' && S.dist2(q.x, q.y, o.x, o.y) < 40 * 40);
-    if (inBush && d > 130 && (G.matchTime - q.lastShotT) > 2) continue;
-    if (!S.clearSeg(p.x, p.y, q.x, q.y, world)) continue;
-    if (d < td) { td = d; target = q; }
+  // ---- senses and memory
+  const seen = botSenses(p);
+  if (seen) {
+    if (ai.target !== seen) { ai.target = seen; ai.reactT = sk.react * (0.7 + Math.random() * 0.6); }
+    ai.mem = { x: seen.x, y: seen.y, vx: seen.vx || 0, vy: seen.vy || 0, t: G.matchTime };
+  } else {
+    ai.target = null;
+    // shot from somewhere it cannot see: turn toward the shooter
+    if (ai.hitBy && ai.hitBy.alive && G.matchTime - ai.hitT < 1.2 && (!ai.mem || ai.mem.t < ai.hitT)) {
+      ai.mem = { x: ai.hitBy.x, y: ai.hitBy.y, vx: 0, vy: 0, t: ai.hitT };
+    }
   }
-  if (target && ai.target !== target) {
-    ai.target = target;
-    ai.reactT = 0.2 + Math.random() * 0.35; // reaction delay
-  }
-  const fighting = target && ai.reactT <= 0;
+  const quietFor = ai.mem ? G.matchTime - ai.mem.t : 99;
 
   const st = G.storm;
   const distToSafe = S.dist(p.x, p.y, st ? st.tx : S.WORLD / 2, st ? st.ty : S.WORLD / 2);
   const outsideStorm = st && S.dist(p.x, p.y, st.cx, st.cy) > st.r - 60;
 
-  // --- heal when safe
+  // ---- heal when no enemy has been seen for a moment
   const hurt = p.hp < 55 || p.shield < 20;
-  if (!target && hurt && p.useT <= 0) {
+  if (!seen && quietFor > 1.5 && hurt && p.useT <= 0) {
     let idx = -1;
     for (let i = 1; i < 5; i++) {
       const s = p.slots[i];
@@ -1041,9 +1073,10 @@ function botThink(p, dt) {
     if (idx >= 0) { p.sel = idx; startUse(p); }
   }
 
-  if (fighting) {
+  if (seen) {
+    // ---------- fight
     ai.mode = 'fight';
-    // select best weapon
+    // best weapon for the fight
     let best = -1, bs = -1;
     for (let i = 1; i < 5; i++) {
       const s = p.slots[i];
@@ -1052,81 +1085,98 @@ function botThink(p, dt) {
       const sc = [2, 3, 3, 4, 3.5][s.w] * (1 + s.r * 0.3);
       if (sc > bs) { bs = sc; best = i; }
     }
-    if (best >= 0 && p.sel !== best && p.useT <= 0) { p.sel = best; }
-    else if (best === -1) p.sel = 0; // pickaxe rush
+    if (best >= 0 && p.sel !== best && p.useT <= 0) p.sel = best;
+    else if (best === -1 && p.useT <= 0) p.sel = 0; // pickaxe rush
 
-    // panic wall
+    const s = curSlot(p);
+    const weapon = s && s.kind === 'weapon' ? S.WEAPONS[s.w] : null;
+    const td = S.dist(p.x, p.y, seen.x, seen.y);
+
+    // aim where the target will be when the bullet arrives
+    let px = seen.x, py = seen.y;
+    if (weapon) {
+      const tt = Math.min(1.2, td / weapon.speed) * sk.lead;
+      px += (seen.vx || 0) * tt; py += (seen.vy || 0) * tt;
+    }
+    const aimTrue = Math.atan2(py - p.y, px - p.x);
+    ai.desAim = aimTrue + (Math.random() - 0.5) * 2 * sk.jitter;
+    const tol = weapon ? ({ sniper: 0.05, ar: 0.12, pistol: 0.14, smg: 0.18, shotgun: 0.22 }[weapon.id] || 0.15) : 0.5;
+    ai.fireTol = tol;
+
+    // panic: low and close to a fight, drop a wall for cover
     if (p.hp < 40 && ai.panicWallT <= 0 && p.mats[p.buildMat] >= S.WALL_COST) {
-      p.input.aim = Math.atan2(target.y - p.y, target.x - p.x);
+      p.input.aim = aimTrue;
       ai.panicWallT = 3;
       tryPlaceWall(p);
     }
 
-    const aimAng = Math.atan2(target.y - p.y, target.x - p.x);
-    const err = (Math.random() - 0.5) * 0.16;
-    inp.aim = aimAng + err;
-
-    // strafe + range keeping
-    const prefRange = (() => {
-      const s = curSlot(p);
-      if (!s || s.kind !== 'weapon') return 50;
-      return { pistol: 260, smg: 220, shotgun: 120, ar: 340, sniper: 480 }[S.WEAPONS[s.w].id] || 260;
-    })();
-    if (ai.strafeT <= 0) { ai.strafeDir = Math.random() < 0.5 ? 1 : -1; ai.strafeT = 0.7 + Math.random() * 0.9; }
-    const perp = aimAng + Math.PI / 2 * ai.strafeDir;
-    let mx = Math.cos(perp), my = Math.sin(perp);
-    const rangeErr = td - prefRange;
-    mx -= Math.cos(aimAng) * S.clamp(rangeErr / 200, -1, 1);
-    my -= Math.sin(aimAng) * S.clamp(rangeErr / 200, -1, 1);
-    const mag = Math.hypot(mx, my) || 1;
-    inp.mx = mx / mag; inp.my = my / mag;
-
-    // fire discipline
-    const s = curSlot(p);
-    const canFight = s && s.kind === 'weapon' && p.reloadT <= 0 && Math.abs(S.angDiff(inp.aim, aimAng)) < 0.35 && td < S.WEAPONS[s.w].range * 0.9;
-    if (canFight) {
-      if (ai.pauseT > 0) { inp.fire = false; }
-      else {
-        inp.fire = true;
-        if (ai.fireT <= -0.4 - Math.random() * 0.8) ai.fireT = 0.5 + Math.random() * 0.7;
-        if (ai.fireT <= 0) { ai.pauseT = 0.25 + Math.random() * 0.5; ai.fireT = 0; }
-      }
-    } else if (s && s.kind === 'weapon' && s.mag <= 0) {
-      // reload handled automatically by tryFire; keep moving
+    const aimAng = Math.atan2(seen.y - p.y, seen.x - p.x);
+    if (ai.strafeT <= 0) {
+      ai.strafeDir = Math.random() < 0.5 ? 1 : -1;
+      ai.strafeT = sk.strafeHold * (0.6 + Math.random() * 0.8);
     }
-    if (ai.stuckT > 0.6) { inp.mx = -inp.mx; inp.my = -inp.my; ai.stuckT = 0.2; }
-    botApplyMove(p, dt);
-    return;
-  }
+    // dodge: a shot just landed, so often step sideways
+    if (G.matchTime - ai.hitT < 0.25 && ai.dodgeCd <= 0 && Math.random() < 0.45 * (1 - sk.aggro * 0.5)) {
+      ai.strafeDir = -ai.strafeDir;
+      ai.strafeT = sk.strafeHold * (0.6 + Math.random() * 0.8);
+      ai.dodgeCd = 1.2;
+    }
 
-  // --- no target: storm safety first
-  if (outsideStorm || (st && distToSafe > st.tr * 0.85)) {
+    if (!weapon) {
+      // no gun: rush and swing
+      inp.mx = Math.cos(aimAng); inp.my = Math.sin(aimAng);
+      ai.wantFire = td < 60;
+      ai.fireTol = 0.5;
+    } else {
+      const prefRange = { pistol: 260, smg: 220, shotgun: 120, ar: 340, sniper: 480 }[weapon.id] || 260;
+      const perp = aimAng + Math.PI / 2 * ai.strafeDir;
+      let mx = Math.cos(perp), my = Math.sin(perp);
+      // keep the preferred range; a hurt, less aggressive bot backs off
+      const pull = S.clamp((td - prefRange) / 200, -1, 1);
+      const retreat = (p.hp < 35 && sk.aggro < 0.6) ? 1.2 : 0;
+      mx -= Math.cos(aimAng) * (pull + retreat);
+      my -= Math.sin(aimAng) * (pull + retreat);
+      const mag = Math.hypot(mx, my) || 1;
+      inp.mx = mx / mag; inp.my = my / mag;
+      ai.wantFire = p.reloadT <= 0 && td < weapon.range * 0.9;
+    }
+  } else if (outsideStorm || (st && distToSafe > st.tr * 0.85)) {
+    // ---------- storm first
     ai.mode = 'storm';
     const a = Math.atan2(st.ty - p.y, st.tx - p.x) + (Math.random() - 0.5) * 0.6;
-    inp.aim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
+    ai.desAim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
+  } else if (ai.mem && quietFor < 3 && S.dist(p.x, p.y, ai.mem.x, ai.mem.y) > 70) {
+    // ---------- search: walk to where the enemy was last seen
+    ai.mode = 'search';
+    const a = Math.atan2(ai.mem.y - p.y, ai.mem.x - p.x);
+    ai.desAim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
   } else {
-    // --- loot seeking
-    let goal = null, gd = 1e9;
+    // ---------- loot, then wander
+    let goal = ai.goal;
     if (ai.lootT <= 0) {
       ai.lootT = 1.2;
+      goal = null;
+      let gd = 1e9;
       for (const l of G.loot.values()) {
         if (!botWantsItem(p, l)) continue;
         const d = S.dist2(p.x, p.y, l.x, l.y);
         if (d < gd && d < 600 * 600) { gd = d; goal = { x: l.x, y: l.y }; }
       }
-      if (!goal) for (const c of G.chests) {
-        if (c.open) continue;
-        const d = S.dist2(p.x, p.y, c.x, c.y);
-        if (d < gd && d < 700 * 700) { gd = d; goal = { x: c.x, y: c.y }; }
+      if (!goal) {
+        for (const c of G.chests) {
+          if (c.open) continue;
+          const d = S.dist2(p.x, p.y, c.x, c.y);
+          if (d < gd && d < 700 * 700) { gd = d; goal = { x: c.x, y: c.y }; }
+        }
       }
       ai.goal = goal;
-    } else goal = ai.goal;
+    }
 
     if (goal && S.dist(p.x, p.y, goal.x, goal.y) > 50) {
       ai.mode = 'loot';
       const a = Math.atan2(goal.y - p.y, goal.x - p.x);
-      inp.aim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
-      // grab nearby wanted loot; if pockets full, swap out weakest weapon
+      ai.desAim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
+      // grab nearby wanted loot; if pockets are full, swap out the weakest weapon
       if (p.slots.indexOf(null, 1) === -1) {
         let wi2 = -1, ws2 = 1e9;
         for (let i2 = 1; i2 < 5; i2++) {
@@ -1140,7 +1190,6 @@ function botThink(p, dt) {
         if (!botWantsItem(p, l)) continue;
         if (tryPickup(p, l, true)) removeLoot(l);
       }
-      // open nearby chests
       for (const c of G.chests) if (!c.open && S.dist2(p.x, p.y, c.x, c.y) < 55 * 55) { openChest(p, c); break; }
     } else {
       ai.mode = 'wander';
@@ -1151,16 +1200,23 @@ function botThink(p, dt) {
         const a = Math.random() * Math.PI * 2, d = Math.random() * rr;
         ai.wx = S.clamp((st2 ? st2.tx : S.WORLD / 2) + Math.cos(a) * d, 60, S.WORLD - 60);
         ai.wy = S.clamp((st2 ? st2.ty : S.WORLD / 2) + Math.sin(a) * d, 60, S.WORLD - 60);
+        // sometimes stop for a moment to look around, like a player would
+        if (Math.random() < 0.3) ai.idleT = 0.6 + Math.random() * 1.2;
       }
       const a = Math.atan2(ai.wy - p.y, ai.wx - p.x);
-      inp.aim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
+      if (ai.idleT > 0) {
+        inp.mx = 0; inp.my = 0;
+        ai.desAim = ai.desAim + (Math.random() - 0.5) * 1.2;
+      } else {
+        ai.desAim = a; inp.mx = Math.cos(a); inp.my = Math.sin(a);
+      }
     }
   }
-  // no weapon after a while → "find" one (keeps bots threatening)
+
+  // no weapon after a while: find one (keeps bots threatening)
   if (G.matchTime > 25 && !p.slots.some(s => s && s.kind === 'weapon')) {
     const wi = Math.floor(Math.random() * 3); // pistol/smg/shotgun
     const empty = p.slots.indexOf(null, 1);
-    if (empty === -1) { /* full of consumables: replace slot 1 */ }
     const idx = empty !== -1 ? empty : 1;
     p.slots[idx] = { kind: 'weapon', w: wi, r: Math.floor(Math.random() * 2), mag: S.WEAPONS[wi].mag };
     p.ammo[S.WEAPONS[wi].ammo] += 60;
@@ -1171,15 +1227,34 @@ function botThink(p, dt) {
     const at = S.WEAPONS[cs.w].ammo;
     if (p.ammo[at] < 10) p.ammo[at] += 1;
   }
-  if (ai.stuckT > 0.6) { const t = inp.mx; inp.mx = -inp.my; inp.my = t; ai.stuckT = 0.2; }
+  if (p.stuckT > 0.6) { const t = inp.mx; inp.mx = -inp.my; inp.my = t; p.stuckT = 0.2; }
   botApplyMove(p, dt);
 }
 
+// runs every tick: turns the aim toward the desired aim at the bot's own speed,
+// then fires in bursts only when the aim is on target
 function botApplyMove(p, dt) {
-  // normalize
   const inp = p.input;
   const m = Math.hypot(inp.mx, inp.my);
   if (m > 1) { inp.mx /= m; inp.my /= m; }
+  const ai = p.ai;
+  if (!ai) return;
+
+  const d = S.angDiff(ai.curAim, ai.desAim);            // signed turn needed
+  const step = S.clamp(d, -ai.skill.aimSpeed * dt, ai.skill.aimSpeed * dt);
+  ai.curAim += step;
+  inp.aim = ai.curAim;
+
+  if (ai.wantFire && ai.reactT <= 0 && Math.abs(S.angDiff(ai.curAim, ai.desAim)) < ai.fireTol) {
+    if (ai.pauseT > 0) { ai.pauseT -= dt; inp.fire = false; }
+    else {
+      inp.fire = true;
+      ai.burstT -= dt;
+      if (ai.burstT <= 0) { ai.pauseT = 0.12 + Math.random() * 0.3; ai.burstT = 0.35 + Math.random() * 0.6; }
+    }
+  } else {
+    inp.fire = false;
+  }
 }
 
 // ============================================================
