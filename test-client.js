@@ -204,6 +204,18 @@ try {
   frames(10);
   ok(true, 'snap + you handled');
 
+  // knocked duo: player 7 is knocked and teammate 8 is up next to them (hold-E revive prompt)
+  deliver({
+    t: 'snap', tm: 3, alive: 2,
+    p: [[7, 600, 600, 0.5, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 1, 25, 40], [8, 640, 600, 1.2, 80, 0, 2, -1, 0, 0, 1, 0, 0, 0, 0, 0, 0]],
+    st: null,
+  });
+  deliver({ t: 'ev', k: 'knock', vid: 7, vname: 'SmokeTester', vteam: 2, kid: 8, kname: 'Rival', kteam: 4, x: 600, y: 600 });
+  frames(10);
+  deliver({ t: 'ev', k: 'revive', vid: 7, vname: 'SmokeTester', rid: 8, rname: 'Mate', vteam: 2, kteam: 2, x: 600, y: 600 });
+  frames(5);
+  ok(true, 'knock and revive render without errors');
+
   // events galore
   const evs = [
     { k: 'shot', x: 630, y: 600, a: 0.5, w: 3, id: 7 },
