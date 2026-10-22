@@ -247,11 +247,11 @@ function genMap(seed) {
 
   // ---- buildings in each POI, kept off the roads
   for (const poi of G.pois) {
-    const nB = 2 + (rand() < 0.5 ? 1 : 0);
+    const nB = 4 + Math.floor(rand() * 3);
     let placed = 0, tries = 0;
-    while (placed < nB && tries++ < 80) {
+    while (placed < nB && tries++ < 200) {
       const cw = 4 + Math.floor(rand() * 3), ch = 3 + Math.floor(rand() * 2);
-      const a = rand() * Math.PI * 2, d = 60 + rand() * 170;
+      const a = rand() * Math.PI * 2, d = 60 + rand() * 200;
       const cx = poi.x + Math.cos(a) * d, cy = poi.y + Math.sin(a) * d;
       const gx0 = Math.round((cx - cw * S.GRID / 2) / S.GRID), gy0 = Math.round((cy - ch * S.GRID / 2) / S.GRID);
       if (!floorFree(gx0, gy0, cw, ch)) continue;
@@ -262,7 +262,7 @@ function genMap(seed) {
   }
   // a few lone houses next to roads
   let houses = 0;
-  for (let tries = 0; tries < 4000 && houses < 4; tries++) {
+  for (let tries = 0; tries < 8000 && houses < 14; tries++) {
     const x = rand() * W, y = rand() * W;
     const rd = roadDist(x, y);
     if (rd < 150 || rd > 420) continue;
