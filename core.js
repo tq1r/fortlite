@@ -11,6 +11,7 @@ const FAST = !!opts.fast;
 const NO_STORM = !!opts.nostorm;
 const NO_BUS = !!opts.nobus;   // debug: drop everyone straight onto the map
 const BOT_FILL = (typeof opts.bots === 'number') ? opts.bots : S.BOT_FILL;
+const MODE = opts.mode === 'duo' ? 'duo' : 'solo';   // this room's mode: duo rooms hold parties of two only
 const onMatchEnd = typeof opts.onMatchEnd === 'function' ? opts.onMatchEnd : null;   // reports human results (accounts)
 
 const TICK_MS = 50;
@@ -498,15 +499,11 @@ function broadcast(obj) {
 let evQueue = [];
 function ev(obj) { evQueue.push(obj); }
 
-function lobbyMode() {
-  let duo = 0, solo = 0;
-  for (const c of clients.values()) (c.modeChoice === 'duo' ? duo++ : solo++);
-  return duo > solo ? 'duo' : 'solo';
-}
+function lobbyMode() { return MODE; }
 
 function lobbyState(forClient) {
   const players = [];
-  for (const c of clients.values()) players.push({ id: c.id, name: c.name, team: c.team, bot: false, mode: c.modeChoice || 'solo' });
+  for (const c of clients.values()) players.push({ id: c.id, name: c.name, team: c.team, bot: false, party: !!c.party });
   return {
     t: 'lobby', state: G.state, cd: Math.max(0, Math.ceil(G.countdown)),
     players, maxPlayers: S.MAX_PLAYERS, mode: lobbyMode(),
@@ -655,31 +652,16 @@ function startMatch() {
   G.matchTime = 0;
   G.mode = lobbyMode();
   const humans = [...clients.values()];
-  const counts = new Map(); // team -> member count
-  let nextTeam = S.PICKABLE_TEAMS + 1;
-
+  let teamTotal = 0;
   if (G.mode === 'duo') {
-    // respect manual picks (capacity 2)
+    // a party of two is one team; teams are numbered from 1
+    const teamOf = new Map();
     for (const c of humans) {
-      if (c.team >= 1 && c.team <= S.PICKABLE_TEAMS && (counts.get(c.team) || 0) < 2) {
-        counts.set(c.team, (counts.get(c.team) || 0) + 1);
-      } else c.team = 0;
+      const key = c.party ? c.party.id : 'c' + c.id;
+      if (!teamOf.has(key)) teamOf.set(key, teamOf.size + 1);
+      c.team = teamOf.get(key);
     }
-    // auto-pair the rest: join a half-full team first (so players pair up), then empty teams
-    for (const c of humans) {
-      if (c.team !== 0) continue;
-      let placed = false;
-      for (let t = 1; t <= S.PICKABLE_TEAMS && !placed; t++) {
-        if ((counts.get(t) || 0) === 1) { c.team = t; counts.set(t, 2); placed = true; }
-      }
-      for (let t = 1; t <= S.PICKABLE_TEAMS && !placed; t++) {
-        if ((counts.get(t) || 0) === 0) { c.team = t; counts.set(t, 1); placed = true; }
-      }
-      if (!placed) {
-        const t = ((nextTeam - 1) % (S.TEAMS.length - 1)) + 1; nextTeam++;
-        c.team = t; counts.set(t, (counts.get(t) || 0) + 1);
-      }
-    }
+    teamTotal = Math.max(teamOf.size, Math.floor(Math.min(S.MAX_PLAYERS, BOT_FILL) / 2));
   } else {
     for (const c of humans) c.team = 0;
   }
@@ -690,27 +672,22 @@ function startMatch() {
     p.client = c; c.player = p; p.outfit = c.outfit || 0;
     G.players.push(p);
   }
-  // bots (paired up in duo)
-  const botCount = Math.max(0, Math.min(S.MAX_PLAYERS, BOT_FILL) - G.players.length);
+  // bots
   const names = S.BOT_NAMES.slice();
-  let bi = 0;
-  while (bi < botCount) {
-    let team = 0;
-    if (G.mode === 'duo') {
-      team = null;
-      for (let t = 1; t <= S.PICKABLE_TEAMS; t++) {
-        if ((counts.get(t) || 0) < 2) { team = t; break; }
+  const pickName = (i) => names.length ? names.splice((Math.random() * names.length) | 0, 1)[0] : 'Bot' + i;
+  if (G.mode === 'duo') {
+    // every team ends up with two players: a lone party member gets a bot partner
+    const members = new Map();
+    for (const c of humans) members.set(c.team, (members.get(c.team) || 0) + 1);
+    let bi = 0;
+    for (let t = 1; t <= teamTotal; t++) {
+      for (let k = members.get(t) || 0; k < 2; k++) {
+        G.players.push(makePlayer(nextEntityId++, pickName(bi++), t, true));
       }
-      if (team === null) { team = ((nextTeam - 1) % (S.TEAMS.length - 1)) + 1; nextTeam++; }
-      counts.set(team, (counts.get(team) || 0) + 2);
     }
-    const pair = Math.min(2, botCount - bi);
-    for (let k = 0; k < pair; k++) {
-      const n = names.length ? names.splice((Math.random() * names.length) | 0, 1)[0] : 'Bot' + bi;
-      const p = makePlayer(nextEntityId++, n, team, true);
-      G.players.push(p);
-    }
-    bi += pair;
+  } else {
+    const botCount = Math.max(0, Math.min(S.MAX_PLAYERS, BOT_FILL) - G.players.length);
+    for (let bi = 0; bi < botCount; bi++) G.players.push(makePlayer(nextEntityId++, pickName(bi), 0, true));
   }
   // spawn: everyone rides the Battle Bus (--nobus drops them straight onto the map for debugging)
   G.bus = null;
@@ -761,7 +738,7 @@ function endMatch(winnerTeam) {
   const winnerIds = winners.map(p => p.id);
   let winnerName = 'Nobody';
   if (winners.length) {
-    if (winners[0].team > 0) winnerName = 'Team ' + S.TEAMS[winners[0].team].name;
+    if (winners[0].team > 0) winnerName = S.teamName(winners[0].team);
     else winnerName = winners[0].name;
   }
   const board = G.players
@@ -1732,11 +1709,17 @@ function acceptSocket(conn, account) {
     if (!client) {
       if (msg.t === 'hello') {
         const acct = (account && typeof account === 'object') ? account : null;
+        if (MODE === 'duo' && !(acct && acct.party)) {
+          sendTo({ ws: conn }, { t: 'err', msg: 'Duo needs a party of two. Sign in, invite a friend, then press Duo.' });
+          conn._close();
+          return;
+        }
         client = {
           id: nextEntityId++, ws: conn, name: sanitizeName(acct ? acct.name : msg.name),
           token: acct && typeof acct.token === 'string' ? acct.token.slice(0, 80) : '',
           outfit: acct ? clampOutfit(acct.outfit) : 0,
-          team: 0, modeChoice: 'solo', player: null,
+          team: 0, player: null,
+          party: acct && acct.party ? { id: String(acct.party.id), partnerName: String(acct.party.partnerName || '') } : null,
           lx: S.ISLAND.x, ly: S.ISLAND.y, la: 0, li: null,
         };
         spawnOnIsland(client);
@@ -1761,20 +1744,6 @@ function acceptSocket(conn, account) {
     }
 
       switch (msg.t) {
-      case 'mode': {
-        client.modeChoice = (msg.m === 'duo') ? 'duo' : 'solo';
-        broadcastLobby();
-        break;
-      }
-      case 'team': {
-        const t = msg.team | 0;
-        if (t === 0) { client.team = 0; broadcastLobby(); break; }
-        if (t >= 1 && t <= S.PICKABLE_TEAMS && lobbyMode() === 'duo') {
-          const n = [...clients.values()].filter(c => c.team === t).length;
-          if (n < 2) { client.team = t; broadcastLobby(); }
-        }
-        break;
-      }
       case 'input': {
         const p = client.player;
         if (!p) {

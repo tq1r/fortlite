@@ -21,8 +21,9 @@ export default {
       if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('Expected a WebSocket upgrade', { status: 426 });
       }
-      // one room for everyone for now (same as the single Node server)
-      return env.ROOM.get(env.ROOM.idFromName('main')).fetch(request);
+      // two rooms: solo matches and duo matches (duo rooms only take players in a party of two)
+      const mode = url.searchParams.get('mode') === 'duo' ? 'duo' : 'solo';
+      return env.ROOM.get(env.ROOM.idFromName(mode)).fetch(request);
     }
     if (url.pathname.startsWith('/api/')) {
       return env.ACCOUNTS.get(env.ACCOUNTS.idFromName(ACCOUNTS_ID)).fetch(request);
@@ -41,6 +42,7 @@ export class GameRoom {
     this.game = createGame({
       onMatchEnd: (rows) => this.recordMatch(rows),
       fast, nobus: fast, nostorm: fast, bots: fast ? 0 : undefined,
+      mode: state.id && state.id.name === 'duo' ? 'duo' : 'solo',
     });
   }
 
@@ -136,6 +138,11 @@ export class Accounts {
       // one-time tickets that let a socket claim a signed-in account (short-lived)
       this.sql.exec(`CREATE TABLE IF NOT EXISTS tickets (
         ticket TEXT PRIMARY KEY, token TEXT NOT NULL, created INTEGER NOT NULL)`);
+      // parties: two signed-in friends who queue for Duo together
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS parties (id TEXT PRIMARY KEY, created INTEGER NOT NULL)`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS party_members (user_id INTEGER PRIMARY KEY, party_id TEXT NOT NULL)`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS party_invites (
+        id TEXT PRIMARY KEY, party_id TEXT NOT NULL, from_id INTEGER NOT NULL, to_id INTEGER NOT NULL, created INTEGER NOT NULL)`);
       // cosmetics: the chosen outfit index (added after launch, so check the columns first)
       const cols = this.sql.exec('PRAGMA table_info(users)').toArray().map(c => c.name);
       if (!cols.includes('outfit')) this.sql.exec('ALTER TABLE users ADD COLUMN outfit INTEGER NOT NULL DEFAULT 0');
@@ -164,6 +171,11 @@ export class Accounts {
       if (path === '/api/friends' && method === 'GET') return this.friends(request);
       if (path === '/api/friends/add' && method === 'POST') return this.friendChange(request, await request.json(), true);
       if (path === '/api/friends/remove' && method === 'POST') return this.friendChange(request, await request.json(), false);
+      if (path === '/api/party' && method === 'GET') return this.partyState(request);
+      if (path === '/api/party/invite' && method === 'POST') return this.partyInvite(request, await request.json());
+      if (path === '/api/party/accept' && method === 'POST') return this.partyAccept(request, await request.json());
+      if (path === '/api/party/decline' && method === 'POST') return this.partyDecline(request, await request.json());
+      if (path === '/api/party/leave' && method === 'POST') return this.partyLeave(request, await request.json());
       return json({ error: 'not found' }, 404);
     } catch (e) {
       return json({ error: 'bad request' }, 400);
@@ -252,7 +264,7 @@ export class Accounts {
     if (!row || Date.now() - row.created > TICKET_MS) return json({ error: 'Ticket expired' }, 401);
     const u = this.one('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', row.token);
     if (!u) return json({ error: 'Signed out' }, 401);
-    return json({ token: row.token, name: u.name, outfit: u.outfit || 0 });
+    return json({ token: row.token, name: u.name, outfit: u.outfit || 0, party: this.partyForTicket(u) });
   }
 
   setOutfit(request, body) {
@@ -281,6 +293,101 @@ export class Accounts {
   leaderboard() {
     const rows = this.sql.exec('SELECT name, wins, kills, matches, best FROM users ORDER BY wins DESC, kills DESC, name LIMIT 20').toArray();
     return json({ rows });
+  }
+
+  // ---- parties ----
+  partyOf(userId) {
+    const row = this.one('SELECT party_id FROM party_members WHERE user_id = ?', userId);
+    return row ? row.party_id : null;
+  }
+  membersOf(partyId) {
+    return this.sql.exec(
+      'SELECT u.id, u.name FROM party_members m JOIN users u ON u.id = m.user_id WHERE m.party_id = ? ORDER BY u.id', partyId
+    ).toArray();
+  }
+  // a socket gets a party only when it is a full party of two
+  partyForTicket(u) {
+    const pid = this.partyOf(u.id);
+    if (!pid) return null;
+    const mem = this.membersOf(pid);
+    if (mem.length !== 2) return null;
+    const other = mem.find(m => m.id !== u.id);
+    return { id: pid, partnerId: other.id, partnerName: other.name };
+  }
+  partyView(u) {
+    const pid = this.partyOf(u.id);
+    const party = pid ? { id: pid, members: this.membersOf(pid).map(m => ({ id: m.id, name: m.name })) } : null;
+    const invites = this.sql.exec(
+      'SELECT i.id, x.name AS from_name FROM party_invites i JOIN users x ON x.id = i.from_id WHERE i.to_id = ? ORDER BY i.created', u.id
+    ).toArray().map(r => ({ id: r.id, from: r.from_name }));
+    return json({ party, invites });
+  }
+  partyState(request) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    return this.partyView(u);
+  }
+  partyInvite(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    const other = this.one('SELECT id, name FROM users WHERE name = ?', String(body.name || '').trim());
+    if (!other) return json({ error: 'No player with that name' }, 404);
+    if (other.id === u.id) return json({ error: 'That is you' }, 400);
+    if (!this.one('SELECT 1 AS ok FROM friends WHERE user_id = ? AND friend_id = ?', u.id, other.id)) {
+      return json({ error: 'You can only invite friends. Add them first.' }, 403);
+    }
+    if (this.partyOf(other.id)) return json({ error: other.name + ' is already in a party' }, 409);
+    let pid = this.partyOf(u.id);
+    if (!pid) {
+      pid = crypto.randomUUID();
+      this.sql.exec('INSERT INTO parties (id, created) VALUES (?, ?)', pid, Date.now());
+      this.sql.exec('INSERT INTO party_members (user_id, party_id) VALUES (?, ?)', u.id, pid);
+    }
+    if (this.membersOf(pid).length >= 2) return json({ error: 'Your party is full (2 of 2)' }, 409);
+    this.sql.exec('DELETE FROM party_invites WHERE party_id = ? AND to_id = ?', pid, other.id);
+    this.sql.exec('INSERT INTO party_invites (id, party_id, from_id, to_id, created) VALUES (?, ?, ?, ?, ?)',
+      crypto.randomUUID(), pid, u.id, other.id, Date.now());
+    return this.partyView(u);
+  }
+  partyAccept(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    const inv = this.one('SELECT * FROM party_invites WHERE id = ? AND to_id = ?', String(body.id || ''), u.id);
+    if (!inv) return json({ error: 'That invite is gone' }, 404);
+    const pidOwn = this.partyOf(u.id);
+    if (pidOwn === inv.party_id) { this.sql.exec('DELETE FROM party_invites WHERE id = ?', inv.id); return this.partyView(u); }
+    if (pidOwn) return json({ error: 'Leave your party first' }, 409);
+    if (!this.one('SELECT id FROM parties WHERE id = ?', inv.party_id)) {
+      this.sql.exec('DELETE FROM party_invites WHERE id = ?', inv.id);
+      return json({ error: 'That party no longer exists' }, 404);
+    }
+    if (this.membersOf(inv.party_id).length >= 2) {
+      this.sql.exec('DELETE FROM party_invites WHERE id = ?', inv.id);
+      return json({ error: 'That party is full' }, 409);
+    }
+    this.sql.exec('INSERT INTO party_members (user_id, party_id) VALUES (?, ?)', u.id, inv.party_id);
+    this.sql.exec('DELETE FROM party_invites WHERE to_id = ?', u.id);
+    return this.partyView(u);
+  }
+  partyDecline(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    this.sql.exec('DELETE FROM party_invites WHERE id = ? AND to_id = ?', String(body.id || ''), u.id);
+    return this.partyView(u);
+  }
+  partyLeave(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    const pid = this.partyOf(u.id);
+    if (pid) {
+      this.sql.exec('DELETE FROM party_members WHERE user_id = ?', u.id);
+      this.sql.exec('DELETE FROM party_invites WHERE from_id = ? AND party_id = ?', u.id, pid);
+      if (!this.membersOf(pid).length) {
+        this.sql.exec('DELETE FROM parties WHERE id = ?', pid);
+        this.sql.exec('DELETE FROM party_invites WHERE party_id = ?', pid);
+      }
+    }
+    return this.partyView(u);
   }
 
   friends(request) {

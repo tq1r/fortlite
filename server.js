@@ -35,7 +35,13 @@ let BOT_FILL = FLAG('bots', S.BOT_FILL);
 if (typeof BOT_FILL !== 'number') BOT_FILL = S.BOT_FILL;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
-const game = createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, bots: BOT_FILL });
+// two matches run at once, as on the Worker: a solo room and a duo room (duo takes parties of two only)
+const games = {
+  solo: createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, bots: BOT_FILL, mode: 'solo' }),
+  duo: createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, bots: BOT_FILL, mode: 'duo' }),
+};
+// --dev-party (local tests only): ?party=ID&partner=NAME stands in for a signed-in party, since this server has no accounts
+const DEV_PARTY = process.argv.includes('--dev-party');
 
 // ============================================================
 //  HTTP static server
@@ -172,7 +178,12 @@ httpServer.on('upgrade', (req, socket) => {
     'Connection: Upgrade\r\n' +
     `Sec-WebSocket-Accept: ${accept}\r\n\r\n`
   );
-  game.acceptSocket(new WSConn(socket));
+  const q = new URL(req.url, 'http://localhost').searchParams;
+  const mode = q.get('mode') === 'duo' ? 'duo' : 'solo';
+  const account = (DEV_PARTY && q.get('party'))
+    ? { name: q.get('name') || 'Dev', token: '', outfit: 0, party: { id: q.get('party'), partnerName: q.get('partner') || '' } }
+    : null;
+  games[mode].acceptSocket(new WSConn(socket), account);
 });
 
 // ============================================================
@@ -181,6 +192,7 @@ httpServer.on('upgrade', (req, socket) => {
 httpServer.listen(PORT, '0.0.0.0', () => {
   log(`FORTLITE server running on http://0.0.0.0:${PORT}`);
   log(`  bots fill to: ${BOT_FILL} players | fast mode: ${FAST}`);
-  game.start();
+  games.solo.start();
+  games.duo.start();
 });
 process.on('uncaughtException', e => console.error('UNCAUGHT', e));

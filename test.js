@@ -135,15 +135,7 @@ async function main() {
   ok(lobbyA.players.length === 2, 'lobby lists 2 players');
   ok(lobbyA.players.every(p => !p.name.includes('<')), 'names sanitized');
 
-  // team pick — needs duo mode for teams to apply
-  A.send({ t: 'mode', m: 'duo' });
-  B.send({ t: 'mode', m: 'duo' });
-  const duoLobby = await B.wait(m => m.t === 'lobby' && m.mode === 'duo');
-  ok(!!duoLobby, 'lobby switched to duo mode');
-  B.send({ t: 'team', team: 2 });
-  const lobbyB = await B.wait(m => m.t === 'lobby' && m.players.some(p => p.name.includes('TesterB') && p.team === 2));
-  ok(!!lobbyB, 'B joined Blue team');
-
+  // duo has its own test (test-duo.js): here both players are in the solo room
   console.log('Waiting for match start (fast mode)...');
   const startA = await A.wait(m => m.t === 'start', 20000);
   ok(startA.world && startA.world.obstacles.length > 50, `world has ${startA.world.obstacles.length} obstacles`);
@@ -152,9 +144,8 @@ async function main() {
   ok(startA.world.loot.length > 30, `world has ${startA.world.loot.length} loot items`);
   ok(startA.world.walls.length > 30, `buildings generated ${startA.world.walls.length} walls`);
   ok(startA.players.length === 6, `match filled to ${startA.players.length} players (2 humans + 4 bots)`);
-  ok(startA.mode === 'duo', `match mode is ${startA.mode}`);
-  const duoTeams = new Set(startA.players.map(p => p.team));
-  ok(duoTeams.size >= 2 && [...duoTeams].every(t => t > 0), `duo teams assigned (${duoTeams.size} teams, all paired)`);
+  ok(startA.mode === 'solo', `match mode is ${startA.mode}`);
+  ok(startA.players.every(p => !p.team), 'solo players have no team');
   const startB = await B.wait(m => m.t === 'start', 10000);
   ok(!!startB, 'B also got start');
 

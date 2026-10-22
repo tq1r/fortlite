@@ -127,11 +127,12 @@ try {
   sandbox.WebSocket.last.onopen();
   const sent1 = sandbox.WebSocket.last.sent;
   ok(sent1.some(m => m.t === 'hello'), 'join → hello sent');
-  ok(sent1.some(m => m.t === 'mode' && m.m === 'solo'), 'join → solo mode sent');
+  ok(/[?&]mode=solo/.test(sandbox.WebSocket.last.url), 'join → socket is in the solo room');
 
-  // duo button while connected just switches mode
+  // duo as a guest: refused before any socket is opened (duo needs a party of two)
+  const beforeDuo = sandbox.WebSocket.last;
   byId.get('duoBtn').onclick();
-  ok(sandbox.WebSocket.last.sent.some(m => m.t === 'mode' && m.m === 'duo'), 'duo button switches mode');
+  ok(sandbox.WebSocket.last === beforeDuo, 'guest duo is refused (no duo socket opened)');
 
   // quality toggle
   byId.get('qualityBtn').onclick();
@@ -149,13 +150,12 @@ try {
   ok(true, 'welcome + lobby handled');
   ok(byId.get('teamRow').style.display === 'none', 'team row hidden in solo');
 
-  // duo lobby shows team buttons
-  deliver({ t: 'lobby', state: 'lobby', cd: 8, mode: 'duo', players: [{ id: 7, name: 'SmokeTester', team: 0, bot: false, mode: 'duo' }], maxPlayers: 30 });
+  // duo lobby: no team picker any more (teams come from parties); players show their team number
+  deliver({ t: 'lobby', state: 'lobby', cd: 8, mode: 'duo', players: [{ id: 7, name: 'SmokeTester', team: 3, bot: false, party: true }], maxPlayers: 30 });
   frames(3);
-  const teamRow = byId.get('teamRow');
-  ok(teamRow.style.display !== 'none' && teamRow.children.length === 7, 'duo lobby renders Auto + 6 team buttons');
-  teamRow.children[1].onclick();
-  ok(sandbox.WebSocket.last.sent.some(m => m.t === 'team' && m.team === 1), 'team pick sent');
+  ok(byId.get('teamRow').style.display === 'none', 'duo lobby has no team picker');
+  const chip = byId.get('lobbyPlayers').children[0];
+  ok(!!chip && chip.textContent === '#3 SmokeTester', `duo chip shows the team number (${chip && chip.textContent})`);
 
   // match start with synthetic world
   deliver({

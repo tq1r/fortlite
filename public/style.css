@@ -332,3 +332,12 @@ button.big { font-size: 22px; padding: 12px 34px; }
 #endBoard tr.me td { color: var(--gold); font-weight: 800; }
 #endBoard td:first-child { font-weight: 800; }
 .discTitle { font-family: var(--display); font-weight: 400; font-size: 26px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }
+
+/* ---------- party (Duo) ---------- */
+.partyBox { display: flex; flex-direction: column; gap: 6px; }
+.partyRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; background: rgba(3, 14, 30, 0.5); clip-path: var(--chamfer-sm); }
+.partyLine { font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); flex: 1; min-width: 180px; }
+.rowBtn { font-size: 13px; padding: 5px 12px; }
+button.ghost.rowBtn { font-size: 12px; }
+.modeBtn.locked { opacity: 0.45; filter: grayscale(0.7); cursor: not-allowed; }
+.modeBtn.locked:hover { filter: grayscale(0.7); }

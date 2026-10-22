@@ -145,7 +145,9 @@
     { name: 'Rose',   color: '#e07d9a' },
     { name: 'Slate',  color: '#8a97ad' },
   ];
-  S.PICKABLE_TEAMS = 6;   // how many teams players can manually join in duo lobby
+  // team numbers run 1..50 in duo (a party is one team); colours repeat every 15 teams
+  S.teamColor = (t) => S.TEAMS[((t - 1) % (S.TEAMS.length - 1)) + 1].color;
+  S.teamName = (t) => 'Team ' + t;
 
   // ---- Match -----------------------------------------------------
   S.LOBBY_COUNTDOWN = 15;   // seconds after first human joins

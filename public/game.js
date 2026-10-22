@@ -215,20 +215,23 @@ async function fetchTicket() {
   const r = await api('/api/ticket', {});
   return r.ok ? (r.data.ticket || '') : '';
 }
+let connectedMode = null;   // the room this socket is in: 'solo' or 'duo'
+let rejectMsg = '';          // the server's reason when it turns a socket away
 async function connect() {
-  // FORTLITE_SERVER (set in config.js) points the page at a separate game server, e.g. "https://my-server.example.com"
+  // FORTLITE_SERVER (set in config.js) points the page at a separate game server, e.g. \"https://my-server.example.com\"
   const base = (window.FORTLITE_SERVER || '').replace(/\/+$/, '');
   setStatus('Connecting…');
   const ticket = acct ? await fetchTicket() : '';   // guests connect at once (no await)
+  connectedMode = myModeChoice === 'duo' ? 'duo' : 'solo';
+  const query = ['mode=' + connectedMode];
+  if (ticket) query.push('k=' + encodeURIComponent(ticket));
   const url = (base
     ? base.replace(/^http/, 'ws') + '/ws'
-    : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws')
-    + (ticket ? '?k=' + encodeURIComponent(ticket) : '');
+    : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws') + '?' + query.join('&');
   try { ws = new WebSocket(url); } catch (e) { setStatus('WebSocket unavailable'); return; }
   ws.onopen = () => {
     wsReady = true;
     ws.send(JSON.stringify({ t: 'hello', name: connectedName }));
-    send({ t: 'mode', m: myModeChoice });
     setStatus('Connected! Waiting for server…');
   };
   ws.onmessage = e => {
@@ -237,6 +240,11 @@ async function connect() {
   };
   ws.onclose = () => {
     wsReady = false;
+    if (rejectMsg) {
+      const msg = rejectMsg; rejectMsg = '';
+      mode = 'menu'; show('menu'); setStatus(msg); toast(msg);
+      return;
+    }
     if (mode !== 'menu') show('disc');
   };
   ws.onerror = () => { if (mode === 'menu') setStatus('Could not reach the server.'); };
@@ -258,6 +266,7 @@ function handle(m) {
     case 'ev': onEv(m); break;
     case 'end': matchLive = false; onEnd(m); break;
     case 'lpos': onLpos(m); break;
+    case 'err': rejectMsg = m.msg || 'Could not join that match'; break;
   }
 }
 
@@ -595,13 +604,13 @@ function renderPause() {
   const myTeam = (players.get(myId) || {}).team || 0;
   const alive = (id) => (!matchLive && !snapAlive.size) || snapAlive.has(id);
   const mates = myTeam > 0 ? rosterNow.filter(p => p.id !== myId && p.team === myTeam) : [];
-  addRow((acct ? acct.name : (connectedName || 'You')) + ' (you)', alive(myId) ? 'alive' : 'out', S.TEAMS[myTeam] ? S.TEAMS[myTeam].color : '#888', !alive(myId));
+  addRow((acct ? acct.name : (connectedName || 'You')) + ' (you)', alive(myId) ? 'alive' : 'out', myTeam > 0 ? S.teamColor(myTeam) : '#888', !alive(myId));
   if (!mates.length) {
     const e = document.createElement('div'); e.className = 'empty';
     e.textContent = myTeam > 0 ? 'Squad mate not in this match' : 'Solo: no squad mates';
     box.append(e);
   }
-  for (const m of mates) addRow(m.name, alive(m.id) ? 'alive' : 'out', S.TEAMS[myTeam].color, !alive(m.id));
+  for (const m of mates) addRow(m.name, alive(m.id) ? 'alive' : 'out', S.teamColor(myTeam), !alive(m.id));
   $('pmAcct').textContent = acct ? 'Signed in as ' + acct.name : 'Playing as guest. Sign in to keep stats and unlock outfits.';
 }
 $('pmInvite').onclick = () => $('inviteBtn').click();
@@ -638,8 +647,8 @@ function killfeed(e) {
   const kf = $('killfeed');
   const div = document.createElement('div');
   div.className = 'kf';
-  const kc = e.kteam > 0 ? S.TEAMS[e.kteam].color : '#c39cff';
-  const vc = e.vteam > 0 ? S.TEAMS[e.vteam].color : '#eee';
+  const kc = e.kteam > 0 ? S.teamColor(e.kteam) : '#c39cff';
+  const vc = e.vteam > 0 ? S.teamColor(e.vteam) : '#eee';
   const wname = KF_WEAPON[e.w] || (S.WEAPONS[e.w] ? S.WEAPONS[e.w].name : 'Eliminated');
   const s1 = document.createElement('span'); s1.textContent = e.kname; s1.style.color = kc;
   const s2 = document.createElement('span'); s2.className = 'kfW'; s2.textContent = wname;
@@ -680,37 +689,17 @@ function updateLobby(m) {
   // sync my team selection
   const mine = m.players.find(p => p.id === myId);
   if (mine) myTeamSel = mine.team || 0;
-  // player chips
+  // player chips (duo: the number is the team, a party of two)
   const lp = $('lobbyPlayers');
   lp.innerHTML = '';
   for (const p of m.players) {
     const chip = document.createElement('div');
     chip.className = 'lobbyP';
-    chip.textContent = p.name;
-    chip.style.borderLeftColor = p.team > 0 ? S.TEAMS[p.team].color : '#888';
+    chip.textContent = p.team > 0 ? '#' + p.team + ' ' + p.name : p.name;
+    chip.style.borderLeftColor = p.team > 0 ? S.teamColor(p.team) : '#888';
     lp.append(chip);
   }
-  // team buttons (duo only)
-  const tr = $('teamRow');
-  if (md === 'duo' && m.state === 'lobby') {
-    tr.style.display = '';
-    tr.innerHTML = '';
-    const counts = {};
-    for (const p of m.players) if (p.team > 0) counts[p.team] = (counts[p.team] || 0) + 1;
-    const mk = (label, i, color) => {
-      const b = document.createElement('button');
-      b.className = 'teamBtn' + (myTeamSel === i ? ' sel' : '');
-      b.textContent = label;
-      b.style.borderColor = color;
-      if (i > 0) b.style.background = color + '33';
-      b.onclick = () => { myTeamSel = i; send({ t: 'team', team: i }); sfx.ui(); };
-      tr.append(b);
-    };
-    mk('AUTO', 0, '#aaa');
-    for (let i = 1; i <= 6; i++) mk(S.TEAMS[i].name + ' ' + (counts[i] || 0) + '/2', i, S.TEAMS[i].color);
-  } else {
-    tr.style.display = 'none';
-  }
+  $('teamRow').style.display = 'none';
 }
 let myTeamSel = 0;
 
@@ -1397,7 +1386,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   if (p == null) return;
   alt = alt || 0;
   const isMe = p.id === myId;
-  const teamCol = p.team > 0 ? S.TEAMS[p.team].color : null;
+  const teamCol = p.team > 0 ? S.teamColor(p.team) : null;
   const air = alt > 0.001;
   // bush hiding (ground only)
   let alpha = 1;
@@ -1487,9 +1476,10 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   g.font = '700 13px "Segoe UI", sans-serif';
   g.textAlign = 'center';
   g.fillStyle = 'rgba(0,0,0,0.6)';
-  g.fillText(p.name, x + 1, y - 36);
+  const tag = p.team > 0 ? '#' + p.team + ' ' + p.name : p.name;
+  g.fillText(tag, x + 1, y - 36);
   g.fillStyle = isMe ? '#ffd76e' : (teamCol ? teamCol : '#ffffff');
-  g.fillText(p.name, x, y - 37);
+  g.fillText(tag, x, y - 37);
   // hp bar
   const bw = 46;
   g.fillStyle = 'rgba(0,0,0,0.55)';
@@ -1730,7 +1720,7 @@ function drawMapDynamic(g, px, k) {
     if (myTeam > 0) for (const p of players.values()) {
       if (p.id === myId || p.team !== myTeam || !p.buf.length) continue;
       const ip = interpPlayer(p, performance.now() - 120);
-      if (ip) dot(ip.x, ip.y, S.TEAMS[p.team].color, 3);
+      if (ip) dot(ip.x, ip.y, S.teamColor(p.team), 3);
     }
     // you: a dot with a short pointer in your aim direction
     const x = sc(me.x), y = sc(me.y);
@@ -1933,6 +1923,55 @@ $('acctTop').onclick = () => openAcct('account');
 // ============================================================
 const TOKEN_KEY = 'fl_token';
 let acct = null;                     // { name, matches, wins, kills, best } when signed in
+// ---- party (Duo needs a party of two) ----
+let partyState = null;               // { party: {id, members:[{id,name}]} | null, invites: [{id, from}] }
+let partyFull = false;               // true when the party has two members
+async function partyAction(path, body) {
+  const r = await api(path, body);
+  if (!r.ok) toast((r.data && r.data.error) || 'Could not do that');
+  loadParty();
+  return r.ok;
+}
+async function loadParty() {
+  if (!acct) { partyState = null; partyFull = false; renderParty(); return; }
+  const r = await api('/api/party');
+  if (!r.ok) { partyState = null; partyFull = false; renderParty(); return; }
+  partyState = r.data;
+  partyFull = !!(r.data.party && r.data.party.members.length === 2);
+  renderParty();
+}
+function renderParty() {
+  const box = $('partyBox');
+  box.innerHTML = '';
+  const duo = $('duoBtn');
+  duo.classList.toggle('locked', !partyFull);
+  duo.title = partyFull ? '' : 'Duo needs a party of two';
+  const line = (text) => { const d = document.createElement('div'); d.className = 'partyLine'; d.textContent = text; return d; };
+  if (!acct) { box.append(line('Sign in and add a friend to party up for Duo.')); return; }
+  const members = partyState && partyState.party ? partyState.party.members : [];
+  const row = document.createElement('div'); row.className = 'partyRow';
+  if (members.length === 2) row.append(line('Party ready for Duo: ' + members.map(m => m.name).join(' + ')));
+  else if (members.length === 1) row.append(line('Party: just you. Invite a friend from the Friends tab.'));
+  else row.append(line('Not in a party. Invite a friend from the Friends tab for Duo.'));
+  if (members.length) {
+    const leave = document.createElement('button');
+    leave.className = 'ghost rowBtn'; leave.textContent = 'Leave party';
+    leave.onclick = () => partyAction('/api/party/leave', {});
+    row.append(leave);
+  }
+  box.append(row);
+  for (const inv of (partyState && partyState.invites) || []) {
+    const r = document.createElement('div'); r.className = 'partyRow';
+    r.append(line(inv.from + ' invited you to a party'));
+    const yes = document.createElement('button'); yes.className = 'rowBtn'; yes.textContent = 'Join';
+    yes.onclick = () => partyAction('/api/party/accept', { id: inv.id });
+    const no = document.createElement('button'); no.className = 'ghost rowBtn'; no.textContent = 'No';
+    no.onclick = () => partyAction('/api/party/decline', { id: inv.id });
+    r.append(yes, no);
+    box.append(r);
+  }
+}
+setInterval(() => { if (acct && mode === 'menu') loadParty(); }, 4000);
 function apiBase() { return (window.FORTLITE_SERVER || '').replace(/\/+$/, ''); }
 async function api(path, body) {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -1959,6 +1998,7 @@ function openAcct(tab) {
   renderAcct();
 }
 function renderAcct() {
+  loadParty();
   const on = !!acct;
   $('acctTop').textContent = on ? acct.name : 'Sign in';
   $('authForm').classList.toggle('hidden', on);
@@ -2064,6 +2104,11 @@ async function loadFriends() {
   for (const f of r.data.rows) {
     const row = document.createElement('div');
     row.textContent = f.name + '  ·  ' + f.wins + ' wins, ' + f.kills + ' elims';
+    const inv = document.createElement('button');
+    inv.className = 'ghost rowBtn';
+    inv.textContent = 'Invite to party';
+    inv.onclick = async () => { if (await partyAction('/api/party/invite', { name: f.name })) toast('Invite sent to ' + f.name); };
+    row.appendChild(inv);
     list.appendChild(row);
   }
 }
@@ -2093,16 +2138,22 @@ loadMe();
 
 // ---- queue for a match ----
 function queue(modeChoice) {
+  if (modeChoice === 'duo' && !partyFull) {
+    toast(acct ? 'Duo needs a party of two. Invite a friend from the Friends tab.' : 'Duo needs a party of two. Sign in first.');
+    sfx.ui();
+    return;
+  }
   myModeChoice = modeChoice;
   localStorage.setItem('fl_mode', modeChoice);
   const name = (nameInput.value || '').trim().slice(0, 16) || 'Player' + ((Math.random() * 900 + 100) | 0);
   localStorage.setItem('fortlite_name', name);
   connectedName = name;
   sfx.ui();
-  if (ws && ws.readyState === 1) {
-    send({ t: 'mode', m: myModeChoice });
+  if (ws && ws.readyState === 1 && connectedMode === modeChoice) {
     show(null);
   } else {
+    if (ws) { ws.onclose = null; try { ws.close(); } catch (_) { /* ignore */ } }
+    wsReady = false;
     show(null);
     mode = 'menu';
     connect();
