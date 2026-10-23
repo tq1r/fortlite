@@ -153,7 +153,7 @@
   S.teamName = (t) => 'Team ' + t;
 
   // ---- Match -----------------------------------------------------
-  S.LOBBY_COUNTDOWN = 15;   // seconds after first human joins
+  S.LOBBY_COUNTDOWN = 10;   // seconds after the first human joins: the join window (and the time a match takes to start)
   S.END_TIME = 14;          // seconds on end screen
   S.MAX_PLAYERS = 100;      // humans + bots
   S.BOT_FILL = 100;         // fill matches to this many players

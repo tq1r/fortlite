@@ -329,7 +329,7 @@ function onSnap(m) {
     if (p.buf.length > 30) p.buf.shift();
     p.hp = a[4]; p.shield = a[5]; p.team = a[6]; p.wv = a[7]; p.kills = a[10];
     p.ph = a[11] || 0; p.alt = (a[12] || 0) / 100; p.outfit = a[13] || 0;
-    p.kn = !!a[14]; p.bleed = a[15] || 0; p.revPct = a[16] || 0;
+    p.kn = !!a[14]; p.bleed = a[15] || 0; p.revPct = a[16] || 0; p.head = a[17] || 0;
     if (id === myId && me) { me.serverX = a[1]; me.serverY = a[2]; me.ph = p.ph; me.alt = p.alt; }
   }
   if (m.bus) {
@@ -1421,6 +1421,32 @@ function drawLoot(g, l, bob) {
   }
 }
 
+// Headwear: the 3/4 art (HEAD_ITEMS) is rasterised once per item and drawn on the head.
+// The hub draws the head 30 units across the face; in a match the body radius is S.PLAYER_R.
+const headImgs = new Map();
+function headImage(idx) {
+  if (!idx || !S.HEADS[idx - 1] || typeof Image === 'undefined') return null;
+  if (headImgs.has(idx)) return headImgs.get(idx);
+  const item = HEAD_ITEMS.find(i => i.id === S.HEADS[idx - 1].id);
+  let img = null;
+  if (item && item.svg) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g transform="translate(76 77) rotate(-40)">' + item.svg + '</g></svg>';
+    img = new Image();
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  headImgs.set(idx, img);
+  return img;
+}
+function drawHeadwear(g, x, y, idx) {
+  const img = headImage(idx);
+  if (!img || !img.complete || !img.naturalWidth) return;
+  const k = S.PLAYER_R / 30;   // hub face radius 30 -> the body radius
+  g.save();
+  g.translate(x, y); g.scale(k, k); g.translate(-97, -98);
+  g.drawImage(img, 0, 0, 200, 200);
+  g.restore();
+}
+
 function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   if (p == null) return;
   alt = alt || 0;
@@ -1471,6 +1497,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   if (sw != null) swing = 1 - sw / 0.3;
 
   FLArt.player(g, x, y, S.OUTFITS[p.outfit || 0].color, p.id);
+  drawHeadwear(g, x, y, p.head || 0);
   if (p.kn) { g.fillStyle = 'rgba(150,10,20,0.45)'; g.beginPath(); g.ellipse(x, y, S.PLAYER_R + 9, S.PLAYER_R - 2, 0, 0, TAU); g.fill(); }
   if (teamCol) { g.strokeStyle = teamCol; g.lineWidth = 3; g.beginPath(); g.arc(x, y, S.PLAYER_R + 3, 0, TAU); g.stroke(); }
 
@@ -1620,11 +1647,11 @@ function drawSpawnIsland(g, now, viewL, viewR, viewT, viewB) {
   for (const [id, lp] of lpos) {
     const info = lobbyInfo.get(id);
     if (!info || (id === myId && lme)) continue;
-    drawPlayer(g, { id, name: info.name, team: info.team, hp: 100, shield: 0, wv: -1, hitT: 0 }, lp.x, lp.y, lp.a, now, null, 0);
+    drawPlayer(g, { id, name: info.name, team: info.team, outfit: info.outfit || 0, head: info.head || 0, hp: 100, shield: 0, wv: -1, hitT: 0 }, lp.x, lp.y, lp.a, now, null, 0);
   }
   if (lme) {
     const pd = lobbyInfo.get(myId) || { id: myId, name: connectedName || 'You', team: 0 };
-    drawPlayer(g, { id: myId, name: pd.name, team: pd.team, hp: 100, shield: 0, wv: -1, hitT: 0 }, lme.x, lme.y, lme.aim, now, null, 0);
+    drawPlayer(g, { id: myId, name: pd.name, team: pd.team, outfit: pd.outfit || 0, head: pd.head || 0, hp: 100, shield: 0, wv: -1, hitT: 0 }, lme.x, lme.y, lme.aim, now, null, 0);
   }
 }
 

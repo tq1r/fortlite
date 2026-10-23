@@ -6,8 +6,18 @@ import { createGame } from '../core.js';
 import S from '../shared.js';   // S.OUTFITS: the cosmetic table (unlock rules live there)
 
 const ACCOUNTS_ID = 'main';          // one accounts store for everyone
+const MATCHMAKER_ID = 'main';        // one matchmaker: it knows every open lobby
 const PBKDF2_ITERATIONS = 100000;    // the most Workers' Web Crypto allows
 const TICKET_MS = 2 * 60 * 1000;     // a game-connect ticket is good for two minutes
+
+// ticket -> { token, name, outfit, party, head } from the accounts store, or null if it is not valid
+async function redeemTicket(env, ticket) {
+  const stub = env.ACCOUNTS.get(env.ACCOUNTS.idFromName(ACCOUNTS_ID));
+  const res = await stub.fetch('https://accounts.internal/internal/ticket', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket }),
+  });
+  return res.ok ? res.json() : null;
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -21,9 +31,20 @@ export default {
       if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('Expected a WebSocket upgrade', { status: 426 });
       }
-      // two rooms: solo matches and duo matches (duo rooms only take players in a party of two)
+      // solo and duo lobbies; duo lobbies only take players in a party of two
       const mode = url.searchParams.get('mode') === 'duo' ? 'duo' : 'solo';
-      return env.ROOM.get(env.ROOM.idFromName(mode)).fetch(request);
+      // a ticket is single use: redeem it here once and hand the account to the room
+      const ticket = url.searchParams.get('k') || '';
+      const account = ticket ? await redeemTicket(env, ticket) : null;
+      const party = account && account.party ? String(account.party.id) : '';
+      const mm = env.MATCHMAKER.get(env.MATCHMAKER.idFromName(MATCHMAKER_ID));
+      const picked = await mm.fetch(`https://mm.internal/assign?mode=${mode}&party=${encodeURIComponent(party)}`);
+      if (!picked.ok) return new Response('No lobby available right now', { status: 503 });
+      const { key } = await picked.json();
+      const headers = new Headers(request.headers);
+      headers.delete('x-fl-account');   // only the Worker sets this header
+      if (account) headers.set('x-fl-account', encodeURIComponent(JSON.stringify(account)));
+      return env.ROOM.get(env.ROOM.idFromName(key)).fetch(new Request(request.url, { headers }));
     }
     if (url.pathname.startsWith('/api/')) {
       return env.ACCOUNTS.get(env.ACCOUNTS.idFromName(ACCOUNTS_ID)).fetch(request);
@@ -39,17 +60,31 @@ export class GameRoom {
     this.env = env;
     // FAST_MATCHES=1 (local tests only, set with wrangler dev --var): short matches with no bots, bus or storm
     const fast = env.FAST_MATCHES === '1';
+    // the room's name is its lobby key, e.g. "solo:1a2b3c4d" (one room per lobby, several can run at once)
+    this.roomName = (state.id && state.id.name) || 'solo:';
+    this.mode = this.roomName.startsWith('duo:') ? 'duo' : 'solo';
     this.game = createGame({
       onMatchEnd: (rows) => this.recordMatch(rows),
+      onLobby: (info) => this.report(info),
       fast, nobus: fast, nostorm: fast, bots: fast ? 0 : undefined,
-      mode: state.id && state.id.name === 'duo' ? 'duo' : 'solo',
+      mode: this.mode,
     });
   }
 
+  // tell the matchmaker whether this lobby is open (players waiting, not yet started)
+  report(info) {
+    const stub = this.env.MATCHMAKER.get(this.env.MATCHMAKER.idFromName(MATCHMAKER_ID));
+    stub.fetch('https://mm.internal/report', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: this.roomName, mode: this.mode, ...info }),
+    }).catch(() => { /* matchmaker busy: the lobby stays listed until it expires */ });
+  }
+
   async fetch(request) {
-    // ?k=<ticket> comes from /api/ticket (a signed-in browser asks for one just before connecting)
-    const ticket = new URL(request.url).searchParams.get('k') || '';
-    const account = ticket ? await this.redeemTicket(ticket) : null;
+    // the Worker redeemed the ticket and passed the account in a header only the Worker can set
+    let account = null;
+    const raw = request.headers.get('x-fl-account');
+    if (raw) { try { account = JSON.parse(decodeURIComponent(raw)); } catch (_) { account = null; } }
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
@@ -58,15 +93,6 @@ export class GameRoom {
     this.game.acceptSocket(conn, account);
     this.game.start();
     return new Response(null, { status: 101, webSocket: client });
-  }
-
-  // ticket -> { token, name, outfit } from the accounts store, or null if it is not valid
-  async redeemTicket(ticket) {
-    const stub = this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName(ACCOUNTS_ID));
-    const res = await stub.fetch('https://accounts.internal/internal/ticket', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket }),
-    });
-    return res.ok ? res.json() : null;
   }
 
   // send the human results of a finished match to the accounts store (stats only)
@@ -117,6 +143,56 @@ export class GameRoom {
   // stop the timers once the room is empty so the free-plan duration is not used up while idle
   afterClose() {
     if (this.game.clientCount() === 0) this.game.stop();
+  }
+}
+
+// Matchmaker: knows every lobby that is still taking players and sends each connection to one of them.
+// When none is open it makes a new lobby key, so several matches run at once. Lobbies report only when
+// they change (join, leave, start), so a lobby that goes quiet expires instead of being polled.
+const MM_STALE_MS = 25 * 1000;          // a lobby not reported for this long is dropped (its countdown is 10 s)
+const MM_PARTY_MS = 30 * 60 * 1000;     // a party stays in the same lobby for this long
+export class Matchmaker {
+  constructor() {
+    this.lobbies = new Map();   // key -> { key, mode, players, max, seen }
+    this.parties = new Map();   // "mode/partyId" -> { key, t }
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const now = Date.now();
+    for (const [k, l] of this.lobbies) if (now - l.seen > MM_STALE_MS) this.lobbies.delete(k);
+    for (const [k, p] of this.parties) if (now - p.t > MM_PARTY_MS) this.parties.delete(k);
+
+    if (url.pathname === '/report' && request.method === 'POST') {
+      const r = await request.json().catch(() => null);
+      if (!r || typeof r.key !== 'string') return json({ error: 'Bad report' }, 400);
+      if (r.state === 'lobby' && r.players > 0 && r.players < r.max) {
+        this.lobbies.set(r.key, { key: r.key, mode: r.mode, players: r.players, max: r.max, seen: now });
+      } else {
+        this.lobbies.delete(r.key);   // full, started, or empty
+      }
+      return json({ ok: true });
+    }
+
+    if (url.pathname === '/assign') {
+      const mode = url.searchParams.get('mode') === 'duo' ? 'duo' : 'solo';
+      const party = url.searchParams.get('party') || '';
+      if (party) {
+        const known = this.parties.get(mode + '/' + party);
+        if (known) return json({ key: known.key });   // partners always share one lobby
+      }
+      // fill the open lobby that already has the most players
+      let best = null;
+      for (const l of this.lobbies.values()) if (l.mode === mode && (!best || l.players > best.players)) best = l;
+      if (!best) {
+        best = { key: mode + ':' + crypto.randomUUID().slice(0, 8), mode, players: 0, max: S.MAX_PLAYERS, seen: now };
+        this.lobbies.set(best.key, best);   // holds the slot until the room reports its first player
+      }
+      if (party) this.parties.set(mode + '/' + party, { key: best.key, t: now });
+      return json({ key: best.key });
+    }
+
+    return json({ error: 'Not found' }, 404);
   }
 }
 
@@ -397,7 +473,7 @@ export class Accounts {
     if (!row || Date.now() - row.created > TICKET_MS) return json({ error: 'Ticket expired' }, 401);
     const u = this.one('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', row.token);
     if (!u) return json({ error: 'Signed out' }, 401);
-    return json({ token: row.token, name: u.name, outfit: u.outfit || 0, party: this.partyForTicket(u) });
+    return json({ token: row.token, name: u.name, outfit: u.outfit || 0, head: u.head || 'none', party: this.partyForTicket(u) });
   }
 
   setOutfit(request, body) {

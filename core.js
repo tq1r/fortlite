@@ -13,6 +13,7 @@ const NO_BUS = !!opts.nobus;   // debug: drop everyone straight onto the map
 const BOT_FILL = (typeof opts.bots === 'number') ? opts.bots : S.BOT_FILL;
 const MODE = opts.mode === 'duo' ? 'duo' : 'solo';   // this room's mode: duo rooms hold parties of two only
 const onMatchEnd = typeof opts.onMatchEnd === 'function' ? opts.onMatchEnd : null;   // reports human results (accounts)
+const onLobby = typeof opts.onLobby === 'function' ? opts.onLobby : null;           // tells the matchmaker whether this room takes players
 
 const TICK_MS = 50;
 const DT = TICK_MS / 1000;
@@ -31,6 +32,7 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 //  Game state
 // ============================================================
 let nextEntityId = 1;
+let lobbyAcc = 0;           // seconds since the last lobby message
 const clients = new Map();   // id -> client {id, ws, name, team, player|null, lastMsgT}
 const G = {
   state: 'lobby',            // lobby (spawn island) | bus (battle bus flight) | active | end
@@ -428,6 +430,8 @@ function spawnLoot(x, y, def) {
 // ============================================================
 //  Players / clients
 // ============================================================
+// headwear id -> small number for the wire: 0 = none, else 1 + index in S.HEADS
+function headIndex(id) { const i = S.HEADS.findIndex(h => h.id === id); return i < 0 ? 0 : i + 1; }
 function clampOutfit(v) {
   const n = Number(v);
   return Number.isInteger(n) && n >= 0 && n < S.OUTFITS.length ? n : 0;
@@ -435,7 +439,7 @@ function clampOutfit(v) {
 
 function makePlayer(id, name, team, isBot) {
   return {
-    id, name, team, bot: isBot, outfit: 0,
+    id, name, team, bot: isBot, outfit: 0, head: 0,
     client: null,
     x: 0, y: 0, aim: 0,
     input: { mx: 0, my: 0, aim: 0, fire: false, build: false },
@@ -506,7 +510,7 @@ function lobbyMode() { return MODE; }
 
 function lobbyState(forClient) {
   const players = [];
-  for (const c of clients.values()) players.push({ id: c.id, name: c.name, team: c.team, bot: false, party: !!c.party });
+  for (const c of clients.values()) players.push({ id: c.id, name: c.name, team: c.team, bot: false, party: !!c.party, outfit: c.outfit || 0, head: c.head || 0 });
   return {
     t: 'lobby', state: G.state, cd: Math.max(0, Math.ceil(G.countdown)),
     players, maxPlayers: S.MAX_PLAYERS, mode: lobbyMode(),
@@ -516,6 +520,10 @@ function lobbyState(forClient) {
 // each client gets its own lobby state: a client who joined while a match is running
 // is told it is waiting for the next match (it is not dropped into spectating)
 function broadcastLobby() { for (const c of clients.values()) sendTo(c, lobbyState(c)); }
+function reportLobby() {
+  if (!onLobby) return;
+  onLobby({ state: G.state, players: clients.size, cd: Math.max(0, Math.ceil(G.countdown)), max: S.MAX_PLAYERS });
+}
 
 function rosterMsg() {
   return G.players.map(p => ({ id: p.id, name: p.name, team: p.team, bot: p.bot }));
@@ -720,7 +728,7 @@ function startMatch() {
   // humans
   for (const c of humans) {
     const p = makePlayer(c.id, c.name, c.team, false);
-    p.client = c; c.player = p; p.outfit = c.outfit || 0;
+    p.client = c; c.player = p; p.outfit = c.outfit || 0; p.head = c.head || 0;
     G.players.push(p);
   }
   // bots
@@ -767,6 +775,7 @@ function startMatch() {
   };
   G.aliveCount = G.players.length;
   G.state = NO_BUS ? 'active' : 'bus';
+  reportLobby();   // a started match is no longer open for joins
   if (!NO_BUS) ev({ k: 'busStart' });
   log(`Match started [${G.mode}]: ${G.players.length} players (${clients.size} human)${NO_STORM ? ' [no storm]' : ''}${NO_BUS ? ' [no bus]' : ''}`);
   for (const c of clients.values()) sendTo(c, startMsg(c.player ? c : null));
@@ -815,6 +824,7 @@ function resetToLobby() {
   for (const c of clients.values()) spawnOnIsland(c);
   G.countdown = LOBBY_CD;
   broadcastLobby();
+  reportLobby();
 }
 
 // ============================================================
@@ -1730,6 +1740,7 @@ function buildSnapshot() {
       p.team, wv, (Math.abs(p.input.mx) + Math.abs(p.input.my)) > 0.1 ? 1 : 0,
       p.useT > 0 ? 1 : 0, p.kills, p.ph, Math.round(p.alt * 100), p.outfit,
       p.kn ? 1 : 0, p.kn ? Math.ceil(p.knT) : 0, Math.round(Math.min(1, p.revT / S.KNOCK.revive) * 100),
+      p.head || 0,
     ]);
   }
   const st = G.storm;
@@ -1758,6 +1769,10 @@ function tick() {
       if (clients.size > 0) {
         G.countdown -= dt;
         if (G.countdown <= 0) startMatch();
+      }
+      if (G.state === 'lobby') {
+        lobbyAcc += dt;
+        if (lobbyAcc >= 1) { lobbyAcc = 0; broadcastLobby(); }
       }
     } else if (G.state === 'bus' || G.state === 'active') {
       if (G.state === 'active') G.matchTime += dt;
@@ -1872,6 +1887,7 @@ function acceptSocket(conn, account) {
           id: nextEntityId++, ws: conn, name: sanitizeName(acct ? acct.name : msg.name),
           token: acct && typeof acct.token === 'string' ? acct.token.slice(0, 80) : '',
           outfit: acct ? clampOutfit(acct.outfit) : 0,
+          head: acct && typeof acct.head === 'string' ? headIndex(acct.head) : 0,
           team: 0, player: null,
           party: acct && acct.party ? { id: String(acct.party.id), partnerName: String(acct.party.partnerName || '') } : null,
           lx: S.ISLAND.x, ly: S.ISLAND.y, la: 0, li: null,
@@ -1886,6 +1902,7 @@ function acceptSocket(conn, account) {
             if (p) p.alive = false;
             client.player = null;
             broadcastLobby();
+            reportLobby();
             log(`Client left: ${client.name} (${clients.size} connected)`);
           }
         };
@@ -1893,6 +1910,7 @@ function acceptSocket(conn, account) {
         // always start on the spawn island; a match already running is joined at the next start
         sendTo(client, { t: 'welcome', id: client.id, state: 'lobby', ver: 1 });
         broadcastLobby();
+        reportLobby();
       }
       return;
     }
