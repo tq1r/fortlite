@@ -98,39 +98,52 @@
   <button id="specNext">&#8250;</button>
 </div>
 
-<!-- ============ MENU ============ -->
-<div id="menu" class="overlay">
-  <header class="menuTop">
-    <span class="wordmark">FORTLITE</span>
-    <nav class="menuNav">
-      <button class="navBtn" id="navProfile">Profile</button>
-      <button class="navBtn" id="navCosmetics">Outfits</button>
-      <button class="navBtn" id="navFriends">Friends</button>
-      <button class="navBtn" id="navLeaders">Leaderboard</button>
+<!-- ============ MENU (Fortnite-style home screen) ============ -->
+<div id="menu" class="overlay hub">
+  <div class="hubBg" aria-hidden="true"></div>
+  <header class="hubTop">
+    <span class="hubLogo">FORTLITE</span>
+    <nav class="hubTabs">
+      <button class="hubTab on" id="tabPlay">Play</button>
+      <button class="hubTab" id="navCosmetics">Locker</button>
+      <button class="hubTab" id="navProfile">Profile</button>
+      <button class="hubTab" id="navFriends">Friends</button>
+      <button class="hubTab" id="navLeaders">Leaderboard</button>
     </nav>
-    <div class="topRight">
-      <button id="qualityBtn" class="ghost">Quality: High</button>
-      <button id="acctTop" class="ghost">Sign in</button>
+    <div class="hubRight">
+      <button id="qualityBtn" class="hubChip">Quality: High</button>
+      <button id="acctTop" class="hubChip">Sign in</button>
     </div>
   </header>
 
-  <div class="menuHero" aria-hidden="true"><span class="heroKicker">Battle royale · 2D</span><h1 class="heroTitle">FORTLITE</h1><span class="heroSub">Drop in. Build. Last one standing.</span></div>
-  <main class="menuMain">
+  <aside class="hubTile">
+    <div class="tileTitle">How to play</div>
+    <div class="tileBody">Drop from the bus, loot up, and be the last one standing. Build walls for cover.</div>
+    <div class="tileKeys"><span><kbd>Space</kbd>jump</span><span><kbd>G</kbd>drop</span><span><kbd>M</kbd>map</span><span><kbd>Esc</kbd>menu</span></div>
+  </aside>
+
+  <div class="hubTag" aria-hidden="true">
+    <div id="hubTagName">Player</div>
+    <div id="hubTagState">Ready for Solo</div>
+  </div>
+
+  <section class="hubCard">
+    <div class="cardTitle">Battle Royale</div>
+    <div class="modeRow">
+      <button id="soloBtn" class="modeBtn on"><b>Solo</b><small>Last one standing</small></button>
+      <button id="duoBtn" class="modeBtn"><b>Duo</b><small>Two per team</small></button>
+    </div>
     <label class="fieldLabel" for="nameInput">Name</label>
     <div class="nameRow">
       <div id="skinPreview"><span class="charBody"></span></div>
       <input id="nameInput" maxlength="16" placeholder="Name" autocomplete="off" spellcheck="false">
     </div>
-    <div class="fieldLabel">Mode</div>
-    <div class="modeRow">
-      <button id="soloBtn" class="modeBtn"><b>Solo</b><small>Last one standing</small></button>
-      <button id="duoBtn" class="modeBtn"><b>Duo</b><small>Two per team</small></button>
-    </div>
+    <button id="playBtn" class="playBtn">Play</button>
     <div id="partyBox" class="partyBox"></div>
     <div id="menuStatus"></div>
-  </main>
+  </section>
 
-  <footer class="menuFoot"><span>Controls are in the Esc menu during a match</span></footer>
+  <footer class="hubBottom"><span>Controls are in the Esc menu during a match</span></footer>
 </div>
 
 <!-- ============ ACCOUNT ============ -->

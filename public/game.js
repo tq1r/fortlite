@@ -846,7 +846,7 @@ function updateStormTxt() {
 addEventListener('keydown', e => {
   if (e.repeat) return;
   const c = e.code;
-  if (mode === 'menu' && c === 'Enter') { $('soloBtn').click(); return; }
+  if (mode === 'menu' && c === 'Enter') { $('playBtn').click(); return; }
   if (bigOpen && (c === 'Escape' || c === 'KeyM')) { toggleBigMap(false); return; }
   if (c === 'KeyM' && mode === 'play' && !pauseOpen) { toggleBigMap(); return; }
   if (c === 'Escape') { togglePause(); return; }
@@ -2039,6 +2039,7 @@ function openAcct(tab) {
 }
 function renderAcct() {
   loadParty();
+  updateHubTag();
   const on = !!acct;
   $('acctTop').textContent = on ? acct.name : 'Sign in';
   $('authForm').classList.toggle('hidden', on);
@@ -2128,6 +2129,24 @@ $('acctClose').onclick = () => {
 };
 document.querySelectorAll('.acctTab').forEach(b => b.onclick = () => acctTab(b.dataset.tab));
 
+// hub: Solo and Duo pick the mode, the yellow Play button starts the queue
+let selectedMode = myModeChoice === 'duo' ? 'duo' : 'solo';
+function updateHubTag() {
+  $('hubTagName').textContent = (nameInput.value || '').trim().slice(0, 16) || 'Player';
+  $('hubTagState').textContent = 'Ready for ' + (selectedMode === 'duo' ? 'Duo' : 'Solo');
+}
+function selectMode(m) {
+  selectedMode = m;
+  $('soloBtn').classList.toggle('on', m === 'solo');
+  $('duoBtn').classList.toggle('on', m === 'duo');
+  updateHubTag();
+}
+$('soloBtn').onclick = () => selectMode('solo');
+$('duoBtn').onclick = () => selectMode('duo');
+$('playBtn').onclick = () => queue(selectedMode);
+nameInput.addEventListener('input', updateHubTag);
+selectMode(selectedMode);
+
 async function loadMe() {
   if (!localStorage.getItem(TOKEN_KEY)) { renderAcct(); return; }
   const r = await api('/api/me');
@@ -2199,8 +2218,6 @@ function queue(modeChoice) {
     connect();
   }
 }
-$('soloBtn').onclick = () => queue('solo');
-$('duoBtn').onclick = () => queue('duo');
 if ('ontouchstart' in window && !window.matchMedia('(pointer: fine)').matches) {
   setStatus('This game needs a keyboard and mouse.');
 }

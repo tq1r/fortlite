@@ -121,9 +121,10 @@ const deliver = obj => {
 
 // ---------------- drive the client ----------------
 try {
-  // join via SOLO mode button
+  // join: pick SOLO on the hub, then press the yellow PLAY button
   byId.get('nameInput').value = 'SmokeTester';
   byId.get('soloBtn').onclick();
+  byId.get('playBtn').onclick();
   sandbox.WebSocket.last.onopen();
   const sent1 = sandbox.WebSocket.last.sent;
   ok(sent1.some(m => m.t === 'hello'), 'join → hello sent');
