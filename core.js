@@ -263,7 +263,8 @@ function genMap(seed) {
   }
   // a few lone houses next to roads
   let houses = 0;
-  for (let tries = 0; tries < 8000 && houses < 14; tries++) {
+  const HOUSE_GOAL = Math.round(14 * (W / 11000) ** 2);   // same houses per area as the 11000 map
+  for (let tries = 0; tries < 8000 && houses < HOUSE_GOAL; tries++) {
     const x = rand() * W, y = rand() * W;
     const rd = roadDist(x, y);
     if (rd < 150 || rd > 420) continue;

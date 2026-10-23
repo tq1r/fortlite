@@ -7,7 +7,9 @@
   const S = {};
 
   // ---- World -------------------------------------------------
-  S.WORLD = 11000;           // world is WORLD x WORLD pixels; the island is inside, sea outside
+  S.WORLD = 16000;           // world is WORLD x WORLD pixels; the island is inside, sea outside
+  // Radii and lengths below were tuned on the 11000 map. They scale with the world (MAP_K).
+  S.MAP_K = S.WORLD / 11000;
   S.GRID = 60;               // wall grid cell size
   S.CELLS = S.WORLD / S.GRID;
 
@@ -48,7 +50,7 @@
   // ---- Spawn island, Battle Bus, skydive -------------------------
   S.ISLAND = { x: 2100, y: 2100, r: 560 };   // lobby island (round, ringed by water)
   S.ISLAND_SPEED = 260;                       // walk speed on the island
-  S.BUS = { span: 6160, speed: 600 };         // bus flies from -span to +span through map centre (about 19 s)
+  S.BUS = { span: Math.round(6160 * S.MAP_K), speed: Math.round(600 * S.MAP_K) };   // bus flies from -span to +span through map centre (about 20 s)
   S.FALL_TIME = 4.2;                          // seconds of skydive before landing
   S.FALL_SPEED = 230;                         // steering speed while skydiving
   S.KNOCK = { bleed: 30, revive: 3.5, range: 85, hp: 30, grace: 3.5 }; // grace: a fresh knock is safe for as long as a revive takes // duo: knocked seconds to bleed out, hold-E revive time, reach, hp after revive
@@ -112,17 +114,17 @@
   S.HARVEST_BONUS = 20;        // extra mats when destroying
 
   // ---- Storm -----------------------------------------------------
-  // The Fade (storm). Radii scale with the world (11000 wide now). Timings are 25% slower than the
+  // The Fade (storm). Radii scale with the world (MAP_K). Timings are 25% slower than the
   // original tuned pace, so the circle closes more slowly and gives players time to move.
   S.STORM = {
-    grace: 28, startR: 6600,
+    grace: 28, startR: Math.round(6600 * S.MAP_K),
     phases: [
-      { wait: 22, shrink: 20, r: 4587, dps: 1 },
-      { wait: 18, shrink: 18, r: 2860, dps: 2 },
-      { wait: 15, shrink: 15, r: 1727, dps: 4 },
-      { wait: 12, shrink: 12, r: 990, dps: 6 },
-      { wait: 11, shrink: 11, r: 517, dps: 8 },
-      { wait: 10, shrink: 10, r: 165, dps: 10 },
+      { wait: 22, shrink: 20, r: Math.round(4587 * S.MAP_K), dps: 1 },
+      { wait: 18, shrink: 18, r: Math.round(2860 * S.MAP_K), dps: 2 },
+      { wait: 15, shrink: 15, r: Math.round(1727 * S.MAP_K), dps: 4 },
+      { wait: 12, shrink: 12, r: Math.round(990 * S.MAP_K), dps: 6 },
+      { wait: 11, shrink: 11, r: Math.round(517 * S.MAP_K), dps: 8 },
+      { wait: 10, shrink: 10, r: Math.round(165 * S.MAP_K), dps: 10 },
       { wait: 10, shrink: 12, r: 0, dps: 12 },
     ],
   };

@@ -28,7 +28,9 @@ function setup(mode) {
   for (const p of ps) { if (p === A || p === B || p === E) continue; p.alive = false; }
   for (const p of [A, B, E]) { p.ph = S.PH.ground; p.alt = 0; p.hp = 100; p.shield = 0; p.bot = false; p.pending = []; p.input.mx = 0; p.input.my = 0; p.input.fire = false; p.input.r = false; }
   A.team = 1; B.team = 1; E.team = 9;
-  A.x = 2000; A.y = 2000; B.x = 2040; B.y = 2000; E.x = 2600; E.y = 2600;
+  // near the island centre, so the spot is land whatever the map size
+  const cx = S.WORLD / 2, cy = S.WORLD / 2;
+  A.x = cx; A.y = cy; B.x = cx + 40; B.y = cy; E.x = cx + 600; E.y = cy + 600;
   A.kills = 0; B.kills = 0; E.kills = 0;
   return { g, G, A, B, E };
 }

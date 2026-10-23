@@ -1742,8 +1742,8 @@ function drawMapDynamic(g, px, k) {
   if (bp && bigOpen) {
     g.strokeStyle = 'rgba(255, 210, 58, 0.55)'; g.lineWidth = 1.2; g.setLineDash([4, 4]);
     g.beginPath();
-    g.moveTo(sc(bp.x - Math.cos(bp.a) * 9000), sc(bp.y - Math.sin(bp.a) * 9000));
-    g.lineTo(sc(bp.x + Math.cos(bp.a) * 9000), sc(bp.y + Math.sin(bp.a) * 9000));
+    g.moveTo(sc(bp.x - Math.cos(bp.a) * S.WORLD * 0.82), sc(bp.y - Math.sin(bp.a) * S.WORLD * 0.82));
+    g.lineTo(sc(bp.x + Math.cos(bp.a) * S.WORLD * 0.82), sc(bp.y + Math.sin(bp.a) * S.WORLD * 0.82));
     g.stroke(); g.setLineDash([]);
   }
   if (bp) {
