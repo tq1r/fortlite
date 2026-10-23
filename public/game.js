@@ -2040,6 +2040,7 @@ function openAcct(tab) {
 function renderAcct() {
   loadParty();
   updateHubTag();
+  renderHeadRow();
   const on = !!acct;
   $('acctTop').textContent = on ? acct.name : 'Sign in';
   $('authForm').classList.toggle('hidden', on);
@@ -2132,40 +2133,84 @@ document.querySelectorAll('.acctTab').forEach(b => b.onclick = () => acctTab(b.d
 
 // hub: Solo and Duo pick the mode, the yellow Play button starts the queue
 let selectedMode = myModeChoice === 'duo' ? 'duo' : 'solo';
-// The hub character is the game's own player design (art.js playerSprite), drawn standing:
-// same palette, same hair and head-gear rule, the equipped outfit colour, and the real pistol.
+// The hub shows the game's own head (art.js playerSprite, seen from above), scaled up.
+// Headwear sits on the top-left of the head, tilted. Base of each item is at the origin, drawn upward.
 const HUB_HAIR = ['#3a2716', '#d9a441', '#8b2e1f', '#2b2b2b', '#c9c2b0'];
-function hubCharacter(name, outfit) {
+const HEAD_ITEMS = [
+  { id: 'none', name: 'Default', svg: '' },
+  { id: 'crown', name: 'Crown', svg: '<path d="M-22 0 L-22 -18 L-11 -8 L0 -24 L11 -8 L22 -18 L22 0 Z" fill="#f5c542" stroke="#8a6512" stroke-width="2.5"/><circle cx="0" cy="-24" r="2.5" fill="#ff5a7a"/>' },
+  { id: 'party', name: 'Party hat', svg: '<path d="M-15 2 L0 -40 L15 2 Z" fill="#ff6fb1" stroke="#a83279" stroke-width="2"/><circle cx="0" cy="-40" r="3.5" fill="#ffe066"/><path d="M-8 -12 L-4 -12 M3 -22 L7 -22" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>' },
+  { id: 'cowboy', name: 'Cowboy hat', svg: '<ellipse cx="0" cy="0" rx="34" ry="7" fill="#7a4a22" stroke="#4a2c12" stroke-width="2"/><path d="M-16 0 Q-17 -22 0 -22 Q17 -22 16 0 Z" fill="#9c6a36" stroke="#4a2c12" stroke-width="2"/><rect x="-16" y="-7" width="32" height="5" fill="#3a2212"/>' },
+  { id: 'tophat', name: 'Top hat', svg: '<rect x="-26" y="-5" width="52" height="7" rx="2" fill="#151515"/><rect x="-16" y="-34" width="32" height="30" rx="2" fill="#1d1d1d" stroke="#000" stroke-width="1.5"/><rect x="-16" y="-10" width="32" height="5" fill="#c0392b"/>' },
+  { id: 'beanie', name: 'Beanie', svg: '<path d="M-20 2 Q-21 -24 0 -24 Q21 -24 20 2 Z" fill="#2e6fd1" stroke="#18407f" stroke-width="2"/><rect x="-21" y="-4" width="42" height="8" rx="3" fill="#1f4f96"/>' },
+  { id: 'viking', name: 'Viking helmet', svg: '<path d="M-20 2 Q-22 -22 0 -22 Q22 -22 20 2 Z" fill="#9aa7b4" stroke="#4e5a64" stroke-width="2"/><path d="M-19 -4 Q-36 -10 -33 -34 Q-24 -22 -17 -14 Z" fill="#f1ead2" stroke="#8a7a58" stroke-width="1.5"/><path d="M19 -4 Q36 -10 33 -34 Q24 -22 17 -14 Z" fill="#f1ead2" stroke="#8a7a58" stroke-width="1.5"/>' },
+  { id: 'army', name: 'Army helmet', svg: '<path d="M-26 2 Q-27 -20 0 -20 Q27 -20 26 2 Z" fill="#5a6b3a" stroke="#2e3a1e" stroke-width="2.5"/><path d="M-20 -8 L20 -8" stroke="#2e3a1e" stroke-width="2"/>' },
+  { id: 'goggles', name: 'Pilot goggles', svg: '<rect x="-24" y="-7" width="48" height="8" rx="3" fill="#222"/><circle cx="-11" cy="-3" r="8" fill="#7ad7ff" stroke="#222" stroke-width="3"/><circle cx="11" cy="-3" r="8" fill="#7ad7ff" stroke="#222" stroke-width="3"/>' },
+  { id: 'halo', name: 'Halo', svg: '<ellipse cx="0" cy="-16" rx="26" ry="7" fill="none" stroke="#ffe066" stroke-width="4"/>' },
+  { id: 'flowers', name: 'Flower crown', svg: '<path d="M-26 6 Q0 -6 26 6" fill="none" stroke="#3f8f3a" stroke-width="4"/><circle cx="-22" cy="2" r="5.5" fill="#ff7aa2"/><circle cx="-11" cy="-4" r="5.5" fill="#ffd86b"/><circle cx="0" cy="-6" r="5.5" fill="#ffffff"/><circle cx="11" cy="-4" r="5.5" fill="#b692ff"/><circle cx="22" cy="2" r="5.5" fill="#ff9a5a"/>' },
+  { id: 'wizard', name: 'Wizard hat', svg: '<ellipse cx="0" cy="0" rx="30" ry="6" fill="#2d1b69" stroke="#170d3a" stroke-width="2"/><path d="M-20 -1 Q-6 -12 -2 -48 Q10 -22 20 -1 Z" fill="#3b2a8c" stroke="#170d3a" stroke-width="2"/><circle cx="-4" cy="-24" r="2.5" fill="#ffe066"/>' },
+  { id: 'santa', name: 'Santa hat', svg: '<path d="M-16 0 Q-12 -36 6 -40 Q16 -30 12 -18 Q6 -10 14 0 Z" fill="#d62c2c" stroke="#7a1313" stroke-width="2"/><rect x="-22" y="-4" width="44" height="9" rx="4" fill="#ffffff" stroke="#cccccc" stroke-width="1.5"/><circle cx="8" cy="-40" r="6" fill="#ffffff"/>' },
+  { id: 'ninja', name: 'Ninja band', svg: '<rect x="-24" y="-5" width="48" height="8" rx="3" fill="#1e1e1e"/><path d="M20 -2 Q32 4 36 16 L31 17 Q27 8 18 4 Z" fill="#1e1e1e"/><path d="M22 -1 Q31 4 34 12" stroke="#444" stroke-width="1.5" fill="none"/>' },
+  { id: 'bandana', name: 'Bandana', svg: '<path d="M-24 -4 Q0 -10 24 -4 L14 6 Q0 2 -14 6 Z" fill="#d33d3d" stroke="#7a1a1a" stroke-width="2"/><circle cx="-8" cy="-2" r="1.6" fill="#ffffff"/><circle cx="6" cy="-1" r="1.6" fill="#ffffff"/>' },
+  { id: 'headphones', name: 'Headphones', svg: '<path d="M-26 4 Q-27 -26 0 -26 Q27 -26 26 4" fill="none" stroke="#333" stroke-width="5"/><rect x="-32" y="0" width="11" height="17" rx="4" fill="#444"/><rect x="21" y="0" width="11" height="17" rx="4" fill="#444"/><line x1="0" y1="-26" x2="-6" y2="-46" stroke="#333" stroke-width="2.5"/><circle cx="-6" cy="-47" r="3.5" fill="#ff5a7a"/>' },
+  { id: 'mohawk', name: 'Mohawk', svg: '<path d="M-7 4 L-10 -30 Q0 -40 8 -28 L9 4 Z" fill="#ff4fa0" stroke="#8a1f56" stroke-width="2"/>' },
+  { id: 'horns', name: 'Devil horns', svg: '<path d="M-18 0 Q-28 -20 -14 -32 Q-12 -18 -6 -8 Z" fill="#b5202d" stroke="#5c0c14" stroke-width="2"/><path d="M18 0 Q28 -20 14 -32 Q12 -18 6 -8 Z" fill="#b5202d" stroke="#5c0c14" stroke-width="2"/>' },
+  { id: 'catears', name: 'Cat ears', svg: '<path d="M-24 2 L-22 -26 L-4 -6 Z" fill="#8a8a8a" stroke="#4a4a4a" stroke-width="2"/><path d="M24 2 L22 -26 L4 -6 Z" fill="#8a8a8a" stroke="#4a4a4a" stroke-width="2"/><path d="M-18 -2 L-18 -16 L-9 -6 Z" fill="#ffb3c6"/><path d="M18 -2 L18 -16 L9 -6 Z" fill="#ffb3c6"/>' },
+  { id: 'chef', name: 'Chef hat', svg: '<rect x="-14" y="-6" width="28" height="9" rx="2" fill="#ffffff" stroke="#bbbbbb" stroke-width="1.5"/><circle cx="-11" cy="-16" r="11" fill="#ffffff" stroke="#bbbbbb" stroke-width="1.5"/><circle cx="0" cy="-22" r="12" fill="#ffffff" stroke="#bbbbbb" stroke-width="1.5"/><circle cx="11" cy="-16" r="11" fill="#ffffff" stroke="#bbbbbb" stroke-width="1.5"/>' },
+  { id: 'astronaut', name: 'Space helmet', svg: '<circle cx="0" cy="-8" r="26" fill="rgba(190,230,255,0.35)" stroke="#cfd8e3" stroke-width="3"/><path d="M-14 -22 Q-8 -28 0 -28" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>' },
+  { id: 'bucket', name: 'Bucket hat', svg: '<path d="M-22 0 Q-22 -18 -10 -18 L10 -18 Q22 -18 22 0 Z" fill="#6b8f3a" stroke="#3e5520" stroke-width="2"/><ellipse cx="0" cy="0" rx="30" ry="6" fill="#6b8f3a" stroke="#3e5520" stroke-width="2"/>' },
+  { id: 'fedora', name: 'Fedora', svg: '<ellipse cx="0" cy="0" rx="32" ry="7" fill="#3a2a1e" stroke="#1d1410" stroke-width="2"/><rect x="-17" y="-24" width="34" height="24" rx="4" fill="#4a3626" stroke="#1d1410" stroke-width="2"/><rect x="-17" y="-7" width="34" height="5" fill="#111111"/>' },
+  { id: 'miner', name: 'Miner helmet', svg: '<path d="M-22 2 Q-23 -22 0 -22 Q23 -22 22 2 Z" fill="#d9c26a" stroke="#7a6a2a" stroke-width="2"/><circle cx="0" cy="-22" r="6" fill="#fff7b0" stroke="#7a6a2a" stroke-width="2"/>' },
+  { id: 'tiara', name: 'Tiara', svg: '<path d="M-18 0 L-14 -12 L-6 -4 L0 -16 L6 -4 L14 -12 L18 0 Z" fill="#e8d7ff" stroke="#9a86c9" stroke-width="2"/><circle cx="0" cy="-9" r="3" fill="#7adfff"/>' },
+  { id: 'backcap', name: 'Backwards cap', svg: '<path d="M-20 2 Q-21 -22 0 -22 Q21 -22 20 2 Z" fill="#e0463c" stroke="#8a1f19" stroke-width="2"/><path d="M-6 -2 L-30 0 Q-32 6 -24 7 L-6 5 Z" fill="#b5301f" stroke="#8a1f19" stroke-width="1.5"/>' },
+];
+let headId = localStorage.getItem('fl_head') || 'none';
+if (!HEAD_ITEMS.some(i => i.id === headId)) headId = 'none';
+function headSvgMarkup(name, outfit, itemId) {
   let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) | 0; h = Math.abs(h);
-  const hair = HUB_HAIR[h % HUB_HAIR.length], style = h % 4;   // 0 bare, 1 cap, 2 helmet, 3 bare
-  const o = outfit, skin = '#f2c078', line = '#9c6d38', ink = 'rgba(0,0,0,0.45)', pants = '#2b333d';
-  let head = '';
-  if (style === 1) head = `<path d="M70 96 Q70 66 100 66 Q130 66 130 96 Z" fill="${o}" stroke="${ink}" stroke-width="3"/><path d="M62 96 L138 96 L134 103 L66 103 Z" fill="${o}" stroke="${ink}" stroke-width="3"/>`;
-  else if (style === 2) head = `<path d="M68 102 Q66 62 100 62 Q134 62 132 102 Z" fill="#8c9aa6" stroke="#4e5a64" stroke-width="3"/>`;
-  else head = `<path d="M68 104 Q66 68 100 66 Q134 68 132 104 Q126 84 108 80 Q90 78 78 92 Q72 98 68 104 Z" fill="${hair}"/>`;
-  return `<svg viewBox="0 0 200 380" xmlns="http://www.w3.org/2000/svg">
-    <ellipse cx="100" cy="370" rx="52" ry="8" fill="rgba(0,0,0,0.35)"/>
-    <circle cx="88" cy="330" r="27" fill="${pants}" stroke="${ink}" stroke-width="3"/>
-    <circle cx="112" cy="330" r="27" fill="${pants}" stroke="${ink}" stroke-width="3"/>
-    <circle cx="40" cy="222" r="20" fill="${o}" stroke="${ink}" stroke-width="3"/>
-    <circle cx="160" cy="222" r="20" fill="${o}" stroke="${ink}" stroke-width="3"/>
-    <circle cx="100" cy="216" r="68" fill="${o}" stroke="${ink}" stroke-width="4"/>
-    <circle cx="78" cy="186" r="18" fill="rgba(255,255,255,0.12)"/>
-    <g transform="translate(0,16)">
-    <circle cx="100" cy="100" r="34" fill="${skin}" stroke="${line}" stroke-width="3"/>
-    ${head}
-    <circle cx="88" cy="104" r="3.2" fill="#2a1d12"/>
-    <circle cx="112" cy="104" r="3.2" fill="#2a1d12"/>
-    <path d="M91 118 Q100 124 109 118" fill="none" stroke="#7a4a22" stroke-width="3" stroke-linecap="round"/>
-    </g>
+  const hair = HUB_HAIR[h % HUB_HAIR.length], style = h % 4;   // 0 bare, 1 cap, 2 helmet, 3 bare: the game's rule
+  const ink = 'rgba(0,0,0,0.45)', skin = '#f2c078', line = '#9c6d38';
+  const item = HEAD_ITEMS.find(i => i.id === itemId) || HEAD_ITEMS[0];
+  let gear = '';
+  if (item.id === 'none') {
+    if (style === 1) gear = `<circle cx="95.5" cy="91" r="25" fill="${outfit}" stroke="${ink}" stroke-width="2"/><circle cx="84" cy="82" r="8" fill="rgba(255,255,255,0.2)"/>`;
+    else if (style === 2) gear = `<circle cx="97" cy="97" r="31" fill="#8c9aa6" stroke="#4e5a64" stroke-width="3"/><circle cx="84" cy="84" r="9" fill="rgba(255,255,255,0.35)"/>`;
+  }
+  const cosmetic = item.svg ? `<g transform="translate(76 77) rotate(-40)">${item.svg}</g>` : '';
+  return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" overflow="visible">
+    <circle cx="105.4" cy="104.8" r="36" fill="${hair}"/>
+    <circle cx="97" cy="98.2" r="30" fill="${skin}" stroke="${line}" stroke-width="4.8"/>
+    ${gear}${cosmetic}
   </svg>`;
+}
+function setHead(id) {
+  headId = id;
+  localStorage.setItem('fl_head', id);
+  updateHubTag();
+  renderHeadRow();
+  sfx.ui();
+}
+function renderHeadRow() {
+  const row = $('headRow');
+  if (!row) return;
+  const name = (nameInput.value || '').trim().slice(0, 16) || 'Player';
+  const outfit = (S.OUTFITS[acct ? (acct.outfit || 0) : 0] || S.OUTFITS[0]).color;
+  row.innerHTML = '';
+  for (const it of HEAD_ITEMS) {
+    const b = document.createElement('button');
+    b.className = 'headTile' + (it.id === headId ? ' on' : '');
+    b.title = it.name;
+    b.innerHTML = headSvgMarkup(name, outfit, it.id);
+    b.onclick = () => setHead(it.id);
+    row.append(b);
+  }
 }
 function updateHubTag() {
   const name = (nameInput.value || '').trim().slice(0, 16) || 'Player';
   $('hubTagName').textContent = name;
   $('hubTagState').textContent = 'Ready for ' + (selectedMode === 'duo' ? 'Duo' : 'Solo');
   const outfit = S.OUTFITS[acct ? (acct.outfit || 0) : 0] || S.OUTFITS[0];
-  $('hubHero').innerHTML = hubCharacter(name, outfit.color);
+  $('hubHero').innerHTML = headSvgMarkup(name, outfit.color, headId);
 }
 function selectMode(m) {
   selectedMode = m;
