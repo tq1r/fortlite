@@ -114,18 +114,18 @@
   S.HARVEST_BONUS = 20;        // extra mats when destroying
 
   // ---- Storm -----------------------------------------------------
-  // The Fade (storm). Radii scale with the world (MAP_K). Timings are 25% slower than the
-  // original tuned pace, so the circle closes more slowly and gives players time to move.
+  // The Fade (storm). Radii scale with the world (MAP_K). Timings give a round of about 20 minutes:
+  // 3 min grace, then seven closing phases.
   S.STORM = {
-    grace: 28, startR: Math.round(6600 * S.MAP_K),
+    grace: 180, startR: Math.round(6600 * S.MAP_K),
     phases: [
-      { wait: 22, shrink: 20, r: Math.round(4587 * S.MAP_K), dps: 1 },
-      { wait: 18, shrink: 18, r: Math.round(2860 * S.MAP_K), dps: 2 },
-      { wait: 15, shrink: 15, r: Math.round(1727 * S.MAP_K), dps: 4 },
-      { wait: 12, shrink: 12, r: Math.round(990 * S.MAP_K), dps: 6 },
-      { wait: 11, shrink: 11, r: Math.round(517 * S.MAP_K), dps: 8 },
-      { wait: 10, shrink: 10, r: Math.round(165 * S.MAP_K), dps: 10 },
-      { wait: 10, shrink: 12, r: 0, dps: 12 },
+      { wait: 120, shrink: 90, r: Math.round(4587 * S.MAP_K), dps: 1 },
+      { wait: 100, shrink: 80, r: Math.round(2860 * S.MAP_K), dps: 2 },
+      { wait: 90, shrink: 75, r: Math.round(1727 * S.MAP_K), dps: 4 },
+      { wait: 75, shrink: 70, r: Math.round(990 * S.MAP_K), dps: 6 },
+      { wait: 60, shrink: 60, r: Math.round(517 * S.MAP_K), dps: 8 },
+      { wait: 50, shrink: 50, r: Math.round(165 * S.MAP_K), dps: 10 },
+      { wait: 40, shrink: 60, r: 0, dps: 12 },
     ],
   };
 

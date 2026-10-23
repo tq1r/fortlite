@@ -35,7 +35,7 @@ function matchStats(mode, seed) {
   const run = new Map();   // bot id -> seconds in a row outside the storm
   const DT = 1 / 20;
   let guard = 0;
-  while (G.state !== 'end' && G.matchTime < 900 && guard++ < 60000) {
+  while (G.state !== 'end' && G.matchTime < 1400 && guard++ < 120000) {
     g.tick();
     // bus: record jump progress and landing spots
     if (G.bus && (G.state === 'bus' || G.state === 'active')) {
@@ -58,7 +58,7 @@ function matchStats(mode, seed) {
         else run.set(p.id, 0);
       }
     }
-    if (G.state === 'active' && G.matchTime > 800) break;
+    if (G.state === 'active' && G.matchTime > 1300) break;
   }
   // how spread out the landings are: the share of all landings in the busiest 600x600 square
   const cells = new Map();

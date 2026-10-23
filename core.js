@@ -20,7 +20,7 @@ const LOBBY_CD = FAST ? 4 : S.LOBBY_COUNTDOWN;
 const END_TIME = FAST ? 3 : S.END_TIME;
 const STORM_CFG = S.STORM;
 const stormPhases = FAST
-  ? STORM_CFG.phases.map(p => ({ wait: p.wait / 5, shrink: p.shrink / 5, r: p.r, dps: p.dps }))
+  ? STORM_CFG.phases.map(p => ({ wait: p.wait / 12, shrink: p.shrink / 12, r: p.r, dps: p.dps }))   // fast test rounds: the storm ends in about 100 s
   : STORM_CFG.phases;
 const STORM_GRACE = FAST ? 4 : STORM_CFG.grace;
 
@@ -618,6 +618,7 @@ function updateFall(p, dt) {
 }
 function landPlayer(p) {
   p.ph = S.PH.ground;
+  p.landT = G.matchTime;   // bots loot for a while after landing before they start fights
   p.alt = 0; p.fallT = 0;
   const [nx, ny] = S.resolveCircle(p.x, p.y, S.PLAYER_R + 2, world);
   p.x = nx; p.y = ny;
@@ -1282,6 +1283,8 @@ function freeHeading(p, want) {
   return best;
 }
 
+const ROUND_LIMIT = 60 * 22;   // safety cap in match seconds: the storm ends the round at about 20 min
+const BOT_LOOT_GRACE = 45;   // seconds after landing in which a bot loots instead of starting a fight (unless shot at)
 function botThink(p, dt) {
   const ai = p.ai, sk = ai.skill;
   if (p.kn) { p.input.mx = 0; p.input.my = 0; p.input.fire = false; p.input.r = false; return; }
@@ -1301,7 +1304,11 @@ function botThink(p, dt) {
   if (moved < 1.5 && (Math.abs(inp.mx) + Math.abs(inp.my)) > 0.3) p.stuckT += 0.2; else p.stuckT = 0;
 
   // ---- senses and memory
-  const seen = botSenses(p);
+  // an unarmed bot does not start a fight from across the map: it keeps looting until the enemy is close or has shot at it
+  const armedNow = p.slots.some((s, i) => i > 0 && s && s.kind === 'weapon' && (s.mag > 0 || p.ammo[S.WEAPONS[s.w].ammo] > 0));
+  let seen = botSenses(p);
+  const looting = G.matchTime - (p.landT || 0) < BOT_LOOT_GRACE;
+  if (seen && G.matchTime - ai.hitT > 2 && (looting || (!armedNow && S.dist(p.x, p.y, seen.x, seen.y) > 160))) seen = null;
   if (seen) {
     if (ai.target !== seen) { ai.target = seen; ai.reactT = sk.react * (0.7 + Math.random() * 0.6); }
     ai.mem = { x: seen.x, y: seen.y, vx: seen.vx || 0, vy: seen.vy || 0, t: G.matchTime };
@@ -1779,7 +1786,7 @@ function tick() {
         } else if (G.matchTime > 3 && G.players.some(p => !p.bot) && !G.players.some(p => !p.bot && p.alive)) {
           // every human is out: the round is over even if bots are still standing
           endMatch(null);
-        } else if (G.aliveCount <= 1 || G.matchTime > 60 * 12) {
+        } else if (G.aliveCount <= 1 || G.matchTime > ROUND_LIMIT) {
           const t = new Set(); for (const p of G.players) if (p.alive) t.add(effTeam(p));
           endMatch(t.size ? [...t][0] : null);
         }
