@@ -2084,6 +2084,7 @@ function renderOutfits() {
   // the menu avatar shows the equipped outfit
   const body = document.querySelector('.charBody');
   if (body) body.style.background = S.OUTFITS[cur].color;
+  updateHubTag();
 }
 async function equipOutfit(i, ok) {
   if (!acct) return;
@@ -2131,9 +2132,53 @@ document.querySelectorAll('.acctTab').forEach(b => b.onclick = () => acctTab(b.d
 
 // hub: Solo and Duo pick the mode, the yellow Play button starts the queue
 let selectedMode = myModeChoice === 'duo' ? 'duo' : 'solo';
+// The hub character is the game's own player design (art.js playerSprite), drawn standing:
+// same palette, same hair and head-gear rule, the equipped outfit colour, and the real pistol.
+const HUB_HAIR = ['#3a2716', '#d9a441', '#8b2e1f', '#2b2b2b', '#c9c2b0'];
+function hubCharacter(name, outfit) {
+  let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) | 0; h = Math.abs(h);
+  const hair = HUB_HAIR[h % HUB_HAIR.length], style = h % 4;   // 0 bare, 1 cap, 2 helmet, 3 bare
+  const o = outfit, skin = '#f2c078', line = '#9c6d38', ink = 'rgba(0,0,0,0.45)';
+  let head = '';
+  if (style === 1) head = `<path d="M62 84 Q62 44 100 44 Q138 44 138 84 Z" fill="${o}" stroke="${ink}" stroke-width="3"/><path d="M50 84 L150 84 L146 93 L54 93 Z" fill="${o}" stroke="${ink}" stroke-width="3"/><circle cx="82" cy="58" r="5" fill="rgba(255,255,255,0.22)"/>`;
+  else if (style === 2) head = `<path d="M60 90 Q58 38 100 38 Q142 38 140 90 Z" fill="#8c9aa6" stroke="#4e5a64" stroke-width="3"/><path d="M74 60 Q84 48 100 47" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="5" stroke-linecap="round"/>`;
+  else head = `<path d="M64 92 Q56 46 102 47 Q142 50 136 92 Q130 68 110 66 Q88 62 76 80 Q70 86 64 92 Z" fill="${hair}"/>`;
+  return `<svg viewBox="0 0 200 480" xmlns="http://www.w3.org/2000/svg" overflow="visible">
+    <ellipse cx="100" cy="472" rx="62" ry="9" fill="rgba(0,0,0,0.35)"/>
+    <rect x="70" y="300" width="27" height="140" rx="10" fill="#2b333d" stroke="${ink}" stroke-width="3"/>
+    <rect x="103" y="300" width="27" height="140" rx="10" fill="#2b333d" stroke="${ink}" stroke-width="3"/>
+    <rect x="64" y="428" width="34" height="42" rx="8" fill="#2e2a24" stroke="${ink}" stroke-width="3"/>
+    <rect x="102" y="428" width="34" height="42" rx="8" fill="#2e2a24" stroke="${ink}" stroke-width="3"/>
+    <path d="M60 180 Q58 146 80 138 L120 138 Q142 146 140 180 L140 302 L60 302 Z" fill="${o}" stroke="${ink}" stroke-width="4"/>
+    <ellipse cx="100" cy="156" rx="34" ry="8" fill="rgba(255,255,255,0.14)"/>
+    <line x1="100" y1="140" x2="100" y2="300" stroke="rgba(0,0,0,0.25)" stroke-width="2"/>
+    <rect x="72" y="240" width="24" height="22" rx="4" fill="rgba(0,0,0,0.18)"/>
+    <rect x="104" y="240" width="24" height="22" rx="4" fill="rgba(0,0,0,0.18)"/>
+    <rect x="64" y="292" width="72" height="16" rx="4" fill="#1b1f25"/>
+    <rect x="40" y="144" width="22" height="150" rx="11" fill="${o}" stroke="${ink}" stroke-width="3"/>
+    <circle cx="51" cy="302" r="10" fill="${skin}" stroke="${line}" stroke-width="2.5"/>
+    <path d="M138 158 Q158 190 152 236" fill="none" stroke="${ink}" stroke-width="29" stroke-linecap="round"/>
+    <path d="M138 158 Q158 190 152 236" fill="none" stroke="${o}" stroke-width="23" stroke-linecap="round"/>
+    <image href="assets/guns/pistol.png" x="150" y="222" width="78" height="52"/>
+    <circle cx="152" cy="240" r="10" fill="${skin}" stroke="${line}" stroke-width="2.5"/>
+    <rect x="92" y="124" width="16" height="20" fill="${skin}" stroke="${line}" stroke-width="2.5"/>
+    <circle cx="66" cy="98" r="7" fill="${skin}" stroke="${line}" stroke-width="2.5"/>
+    <circle cx="134" cy="98" r="7" fill="${skin}" stroke="${line}" stroke-width="2.5"/>
+    <ellipse cx="100" cy="92" rx="34" ry="37" fill="${skin}" stroke="${line}" stroke-width="3"/>
+    ${head}
+    <circle cx="88" cy="96" r="3.8" fill="#2a1d12"/>
+    <circle cx="112" cy="96" r="3.8" fill="#2a1d12"/>
+    <path d="M81 84 Q88 80 94 83" fill="none" stroke="${hair}" stroke-width="3" stroke-linecap="round"/>
+    <path d="M106 83 Q112 80 119 84" fill="none" stroke="${hair}" stroke-width="3" stroke-linecap="round"/>
+    <path d="M90 112 Q100 119 110 112" fill="none" stroke="#7a4a22" stroke-width="3" stroke-linecap="round"/>
+  </svg>`;
+}
 function updateHubTag() {
-  $('hubTagName').textContent = (nameInput.value || '').trim().slice(0, 16) || 'Player';
+  const name = (nameInput.value || '').trim().slice(0, 16) || 'Player';
+  $('hubTagName').textContent = name;
   $('hubTagState').textContent = 'Ready for ' + (selectedMode === 'duo' ? 'Duo' : 'Solo');
+  const outfit = S.OUTFITS[acct ? (acct.outfit || 0) : 0] || S.OUTFITS[0];
+  $('hubHero').innerHTML = hubCharacter(name, outfit.color);
 }
 function selectMode(m) {
   selectedMode = m;
