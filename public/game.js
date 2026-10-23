@@ -2660,6 +2660,7 @@ function describe(key) {
   const row = SET_ROWS.find(r => r.key === key) || SET_ROWS[1];
   $('setDescTitle').textContent = row.label || 'Window mode';
   $('setDescBody').textContent = row.desc;
+  document.querySelectorAll('#setList .setRow').forEach(r => r.classList.toggle('sel', r.dataset.key === (row.key || 'vsync')));
 }
 function renderSettings() {
   if (!setDraft) setDraft = { ...FL_SET };
@@ -2697,6 +2698,7 @@ function renderSettings() {
       ctl.append(inp, v);
     }
     el.append(lab, ctl);
+    el.dataset.key = row.key || 'vsync';
     el.onmouseenter = () => describe(row.key || 'vsync');
     el.onclick = () => describe(row.key || 'vsync');
     list.append(el);

@@ -586,3 +586,161 @@ button:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.5); }
 .passTop { grid-template-columns: 240px minmax(0, 1fr); }
 .passHero { justify-self: start; }
 @media (max-width: 1000px) { .passTop { grid-template-columns: 1fr; } }
+
+
+/* ============ Reference theme (request 4): the four hub pages follow the Fortnite screenshots ============ */
+:root { --fn: "Arial Black", "Helvetica Neue", Arial, sans-serif; }
+
+/* top bar: heavy italic caps, light pill for the current page, gold level badge */
+.topNav { height: 60px; background: linear-gradient(180deg, rgba(6, 34, 96, 0.92), rgba(6, 34, 96, 0.35)); }
+.tnLogo { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 22px; letter-spacing: 0; text-shadow: none; min-width: 150px; }
+.tnTab { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 13px; letter-spacing: 0.2px; text-transform: uppercase; padding: 8px 12px; clip-path: none; border-radius: 6px; background: transparent; color: #fff; }
+.tnTab:hover { background: rgba(255, 255, 255, 0.14); filter: none; }
+.tnTab.on { background: #d7e8ff; color: #0a2c7a; }
+.tnCoins, .tnLevel, .tnGear, .tnAcct { clip-path: none; border-radius: 6px; background: rgba(6, 34, 96, 0.8); font-family: var(--fn); font-style: italic; font-weight: 900; }
+.tnCoins b { font-family: var(--fn); font-style: italic; font-weight: 900; }
+.tnLevel { background: #ffd23f; }
+.tnLevel b { font-family: var(--fn); font-style: italic; font-weight: 900; color: #14120a; }
+.tnAcct { font-size: 12px; text-transform: none; }
+
+/* page frame */
+.page { background: linear-gradient(180deg, #2a7cf0 0%, #1258c8 55%, #0a3c99 100%); padding-top: 60px; }
+.pgBg { background: radial-gradient(ellipse 60% 75% at 72% 30%, rgba(170, 215, 255, 0.5), rgba(40, 120, 240, 0) 70%), linear-gradient(180deg, #2d86f5 0%, #0d4fb8 60%, #0a3a8c 100%); filter: none; }
+.pgBg::after { background: none; }
+#pgPass .pgBg { background: radial-gradient(ellipse 45% 60% at 58% 38%, #ffd766 0%, rgba(255, 150, 50, 0) 62%), linear-gradient(180deg, #f08a2c 0%, #b44a12 45%, #3a1205 100%); }
+#pgSettings .pgBg { background: radial-gradient(ellipse 70% 60% at 50% 20%, rgba(90, 160, 255, 0.35), rgba(10, 60, 150, 0) 70%), linear-gradient(180deg, #0f4cb2 0%, #0a3587 60%, #072765 100%); }
+
+.pgTitle { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 34px; letter-spacing: 0; text-shadow: none; text-transform: uppercase; }
+.pgTimer { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 13px; background: rgba(6, 34, 96, 0.75); border-radius: 4px; clip-path: none; }
+.pgHint { font-family: var(--ui); font-weight: 800; color: rgba(255, 255, 255, 0.9); text-shadow: none; }
+.pgBottom { background: linear-gradient(180deg, rgba(6, 34, 96, 0), rgba(6, 34, 96, 0.85)); }
+.pgBack { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 15px; background: rgba(6, 34, 96, 0.85); border-radius: 4px; clip-path: none; padding: 9px 26px; box-shadow: none; }
+.btnY { font-family: var(--fn); font-style: italic; font-weight: 900; border-radius: 4px; clip-path: none; box-shadow: none; }
+.btnB { font-family: var(--fn); font-style: italic; font-weight: 900; border-radius: 4px; clip-path: none; box-shadow: none; }
+
+/* item shop: tall colored cards, name strip and price at the bottom, like the reference */
+.secTitle { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 20px; text-shadow: none; text-transform: uppercase; margin: 16px 0 10px; }
+.secTitle::after { background: rgba(255, 255, 255, 0.35); }
+.shopGrid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.shopGrid.small { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.shopCard { min-height: 290px; border-radius: 4px; clip-path: none; border-top: 0; padding: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--rar) 75%, #ffffff) 0%, var(--rar) 55%, color-mix(in srgb, var(--rar) 55%, #000) 100%); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35); }
+.shopCard:hover { filter: brightness(1.08); background: linear-gradient(180deg, color-mix(in srgb, var(--rar) 75%, #ffffff) 0%, var(--rar) 55%, color-mix(in srgb, var(--rar) 55%, #000) 100%); }
+.shopCard.big { min-height: 330px; }
+.scArt { background: radial-gradient(ellipse at 50% 42%, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 62%); }
+.scArt svg { width: 150px; height: 150px; }
+.shopCard.big .scArt svg { width: 190px; height: 190px; }
+.scInfo { background: rgba(8, 22, 60, 0.82); padding: 9px 12px 10px; gap: 2px; }
+.scName { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 16px; line-height: 1.1; text-transform: uppercase; }
+.scRarity { font-size: 10px; color: var(--rar); font-weight: 900; }
+.scPrice { margin-top: 4px; font-size: 14px; justify-content: flex-end; }
+.scPrice b { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 16px; }
+.ownTag { color: #8fe54a; font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 12px; }
+
+/* locker: square tiles, left icon rail, big character with a caption, like the reference */
+.lkWrap { grid-template-columns: 70px minmax(430px, 1fr) minmax(300px, 0.9fr); }
+.lkRail { padding-top: 24px; gap: 8px; }
+.railBtn { width: 40px; height: 40px; padding: 9px; border-radius: 6px; clip-path: none; background: rgba(255, 255, 255, 0.12); box-shadow: none; color: #fff; }
+.railBtn.on { background: #fff; color: #0a2c7a; }
+.lkMain { padding: 22px 12px 14px 22px; }
+.lkLabel { font-family: var(--fn); font-style: italic; font-weight: 700; font-size: 14px; letter-spacing: 0; text-transform: none; color: rgba(255, 255, 255, 0.72); }
+.lkTitle { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 34px; text-transform: uppercase; text-shadow: none; margin: 0 0 16px; }
+.lkSlots { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 560px; }
+.slotBtn { height: auto; aspect-ratio: 1; border-radius: 8px; clip-path: none; padding: 8px; gap: 4px; background: linear-gradient(180deg, #3d9bff, #1c60d2); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.14); }
+.slotBtn:hover { background: linear-gradient(180deg, #55adff, #2570e0); filter: none; }
+.slotBtn.on { box-shadow: inset 0 0 0 3px #fff; }
+.slotBtn small { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 9px; letter-spacing: 0; color: #d7e8ff; }
+.slotBtn b { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 12px; text-transform: uppercase; }
+.slotIco { width: 58px; height: 58px; }
+.lkPickHead { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 15px; border-bottom: 0; margin: 18px 0 8px; padding-bottom: 0; }
+.outfitRow { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-width: 560px; }
+.headRow { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-width: 560px; }
+.outfitBtn { aspect-ratio: 1; height: auto; border-radius: 8px; clip-path: none; padding: 8px; justify-content: flex-end; background: linear-gradient(180deg, #3d9bff, #1c60d2); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12); font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 11px; text-transform: uppercase; }
+.outfitBtn:hover { background: linear-gradient(180deg, #55adff, #2570e0); filter: none; }
+.outfitBtn.on { box-shadow: inset 0 0 0 3px #fff; }
+.outfitBtn small { color: #d7e8ff; font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 9px; }
+.outfitBtn .sw { width: 100%; height: 60%; border-radius: 4px; }
+.headTile { aspect-ratio: 1; height: auto; border-radius: 8px; clip-path: none; padding: 6px; background: linear-gradient(180deg, #3d9bff, #1c60d2); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12); }
+.headTile:hover { background: linear-gradient(180deg, #55adff, #2570e0); filter: none; }
+.headTile.on { background: linear-gradient(180deg, #55adff, #2570e0); box-shadow: inset 0 0 0 3px #fff; }
+.headTile.locked { background: linear-gradient(180deg, #2c5fb0, #163f86); }
+.lockTag { background: #ffd23f; color: #14120a; font-family: var(--fn); font-style: italic; font-weight: 900; border-radius: 3px; clip-path: none; }
+.lkPreview { align-items: flex-start; padding: 0 0 26px 30px; }
+.lkHero { top: 2%; left: 52%; width: min(58vh, 88%); height: min(58vh, 88%); transform: translateX(-50%); }
+.lkCaption { background: transparent; clip-path: none; border: 0; padding: 0; max-width: 100%; text-align: left; }
+.lkKind { font-family: var(--fn); font-style: italic; font-weight: 800; font-size: 12px; color: #d7e8ff; letter-spacing: 0; margin-top: 10px; }
+.lkKind:first-child { margin-top: 0; }
+.lkName { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 30px; text-transform: uppercase; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.2); }
+.lkName.sm { font-size: 20px; }
+.lkUse { font-family: var(--ui); color: #d7e8ff; font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: none; margin-top: 12px; }
+.lkUse span { background: rgba(255, 255, 255, 0.2); color: #fff; border-radius: 3px; clip-path: none; font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 10px; text-transform: uppercase; padding: 2px 8px; }
+
+/* battle pass: title block on the left, hero in the middle, LVL and XP on the right, reward cards along the bottom */
+.passTop { display: block; position: relative; padding: 26px 40px 0; min-height: 300px; }
+.passHero { position: absolute; left: 40%; top: -6px; width: 400px; height: 400px; justify-self: auto; pointer-events: none; }
+.passHero svg { width: 100%; height: 100%; }
+.passInfo { max-width: 340px; position: relative; z-index: 1; gap: 8px; }
+.seasonTag { font-family: var(--fn); font-style: italic; font-weight: 900; background: transparent; color: #ffd766; padding: 0; clip-path: none; font-size: 15px; }
+.passTitle { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 44px; line-height: 0.95; text-shadow: none; text-transform: uppercase; }
+.passDesc { color: #fff; font-weight: 700; font-size: 13px; max-width: 320px; text-shadow: none; }
+.passLvl { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 15px; max-width: 360px; margin-top: 4px; }
+.passLvl b { color: #ffd766; }
+.passBar { max-width: 360px; height: 12px; background: rgba(0, 0, 0, 0.35); border-radius: 2px; clip-path: none; }
+.passFill { background: linear-gradient(90deg, #ffd766, #ffb020); }
+.passBtns { gap: 8px; }
+.passBtns .btnY, .passBtns .btnB { font-size: 15px; padding: 9px 16px; }
+.passTrackWrap { padding-top: 14px; }
+.passTrack { padding: 0 40px 14px; gap: 8px; }
+.ptCol { flex: 0 0 104px; gap: 6px; }
+.ptNum { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 15px; background: rgba(6, 34, 96, 0.8); border-radius: 3px; clip-path: none; color: #d7e8ff; }
+.ptCol.reached .ptNum { background: rgba(255, 255, 255, 0.85); color: #0a2c7a; }
+.ptCol.current .ptNum { background: #ffd23f; color: #14120a; }
+.ptReward { min-height: 120px; max-height: 160px; border-radius: 4px; clip-path: none; background: linear-gradient(180deg, #3d9bff, #1c60d2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); }
+.ptReward:hover { background: linear-gradient(180deg, #55adff, #2570e0); filter: none; }
+.ptReward.paid { background: linear-gradient(180deg, #ffd45a, #d9941a); }
+.ptReward.paid:hover { background: linear-gradient(180deg, #ffe07a, #e6a52a); }
+.ptReward.paid .ptBody b, .ptReward.paid .ptBody small { color: #2a1a00; }
+.ptReward.ready { box-shadow: inset 0 0 0 3px #fff; }
+.ptBody b { font-family: var(--fn); font-style: italic; font-weight: 900; }
+.ptBody small { font-family: var(--fn); font-style: italic; font-weight: 800; font-size: 10px; text-transform: uppercase; }
+
+/* career */
+.careerWrap { padding: 30px 40px 10px; }
+.ringBg { fill: rgba(6, 34, 96, 0.7); stroke: rgba(255, 255, 255, 0.25); }
+.ringFg { stroke: #ffd766; }
+.ringTxt b { font-family: var(--fn); font-style: italic; font-weight: 900; }
+.ringTxt small { font-family: var(--fn); font-style: italic; font-weight: 900; color: #d7e8ff; }
+.careerInfo .pgTitle { font-size: 40px; }
+.xpBar { background: rgba(0, 0, 0, 0.35); border-radius: 2px; clip-path: none; }
+.xpFill { background: linear-gradient(90deg, #ffd766, #ffb020); }
+.statGrid { padding: 16px 40px 0; }
+.statTile { background: rgba(6, 34, 96, 0.8); clip-path: none; border-radius: 4px; border-left: 0; border-top: 3px solid #ffd766; }
+.statTile b { font-family: var(--fn); font-style: italic; font-weight: 900; }
+.statTile span { font-family: var(--fn); font-style: italic; font-weight: 800; color: #d7e8ff; }
+
+/* settings: dark rows with a white outline on the selected one, description panel on the right */
+.setWrap { padding: 16px 52px 0; column-gap: 40px; }
+.setTabs span { font-family: var(--fn); font-style: italic; font-weight: 900; background: #d7e8ff; color: #0a2c7a; border-radius: 4px; clip-path: none; font-size: 14px; }
+.setList { padding-right: 18px; }
+.setSec { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 22px; text-shadow: none; margin: 18px 0 8px; }
+.setRow { border-bottom: 0; border-radius: 4px; padding: 9px 12px; min-height: 42px; margin-bottom: 4px; background: rgba(6, 34, 96, 0.35); box-shadow: inset 0 0 0 2px transparent; }
+.setRow:hover { background: rgba(6, 34, 96, 0.6); }
+.setRow.sel { background: rgba(6, 34, 96, 0.7); box-shadow: inset 0 0 0 2px #ffffff; }
+.setLab { font-family: var(--fn); font-style: italic; font-weight: 800; font-size: 14px; text-transform: uppercase; }
+.setVal { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 14px; min-width: 160px; }
+.setVal.fixed { color: #d7e8ff; }
+.arrow { font-family: var(--fn); font-size: 18px; padding: 0 8px; background: transparent; }
+.arrow:hover { background: rgba(255, 255, 255, 0.14); }
+.setCtl input[type=range] { width: 200px; accent-color: #3fb0ff; }
+.setDesc { background: rgba(6, 34, 96, 0.82); border: 1px solid rgba(255, 255, 255, 0.18); border-top: 2px solid #ffffff; clip-path: none; border-radius: 4px; margin-top: 52px; }
+.setDesc h3 { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 18px; }
+.setFoot { background: linear-gradient(180deg, rgba(6, 34, 96, 0), rgba(6, 34, 96, 0.85)); gap: 10px; }
+#setApply, #setDefault { font-family: var(--fn); font-style: italic; font-weight: 900; font-size: 15px; }
+
+/* buy dialog */
+.modalCard { background: linear-gradient(180deg, #2a7cf0, #0d4fb8); clip-path: none; border-radius: 6px; border-top: 0; }
+.mName { font-family: var(--fn); font-style: italic; font-weight: 900; }
+.mPrice b { font-family: var(--fn); font-style: italic; font-weight: 900; }
+
+.lkHero { width: min(70vh, 100%); height: min(70vh, 100%); top: -2%; }
+
+.setTabs span { height: auto; padding: 8px 16px; display: inline-block; line-height: 1.2; }
