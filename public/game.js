@@ -18,7 +18,7 @@ function audio() {
   if (!AC) {
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)();
-      master = AC.createGain(); master.gain.value = 0.35; master.connect(AC.destination);
+      master = AC.createGain(); master.gain.value = 0.35 * FL_SET.sfxVolume / 100; master.connect(AC.destination);
     } catch (e) { /* no audio */ }
   }
   if (AC && AC.state === 'suspended') AC.resume();
@@ -174,8 +174,8 @@ let baseScale = 1, camZoom = 1;   // camZoom widens the view while the bus flies
 // ============================================================
 function resize() {
   // pixel density costs GPU time on every frame: cap it (Low quality uses 1)
-  const lowQ = localStorage.getItem('fl_low') === '1';
-  dpr = Math.min(lowQ ? 1 : 1.5, window.devicePixelRatio || 1);
+  const perf = FL_SET.renderMode === 'Performance';
+  dpr = Math.min(perf ? 1 : 1.5, window.devicePixelRatio || 1) * (FL_SET.renderScale / 100);
   vw = innerWidth; vh = innerHeight;
   canvas.width = vw * dpr; canvas.height = vh * dpr;
   canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
@@ -577,9 +577,10 @@ function confetti() {
 //  UI helpers
 // ============================================================
 function show(id) {
-  for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'acctPanel']) $(o).classList.add('hidden');
+  for (const o of ['menu', 'lobby', 'death', 'end', 'disc', 'acctPanel', 'pgShop', 'pgLocker', 'pgPass', 'pgCareer', 'pgSettings', 'buyModal']) $(o).classList.add('hidden');
   $('pauseMenu').classList.add('hidden'); pauseOpen = false;
   if (id) $(id).classList.remove('hidden');
+  if (typeof navFor === 'function') navFor(id);
 }
 function hudVisible(v) {
   $('hud').classList.toggle('hidden', !v);
@@ -1837,9 +1838,16 @@ $('bigMap').addEventListener('click', (e) => { if (e.target.id === 'bigMap' || e
 // ============================================================
 let lastFrame = performance.now();
 let specGuard = 0;
+let lastDraw = 0, fpsCount = 0, fpsSince = 0;
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
+  if (FL_SET.frameLimit && now - lastDraw < 1000 / FL_SET.frameLimit - 1) return;   // frame rate limit (Settings)
+  lastDraw = now;
+  if (FL_SET.showFps) {
+    fpsCount++;
+    if (now - fpsSince >= 500) { $('fpsBox').textContent = Math.round(fpsCount * 1000 / (now - fpsSince)) + ' FPS'; fpsCount = 0; fpsSince = now; }
+  }
   let dt = (now - lastFrame) / 1000;
   lastFrame = now;
   if (dt > 0.1) dt = 0.1;
@@ -1940,22 +1948,17 @@ setInterval(() => { if (mode === 'play') { updateStormTxt(); } }, 500);
 const nameInput = $('nameInput');
 nameInput.value = localStorage.getItem('fortlite_name') || localStorage.getItem('fc2d_name') || '';
 let myModeChoice = localStorage.getItem('fl_mode') || 'solo';
-let lowFx = localStorage.getItem('fl_low') === '1';
-
-function updateQualityBtn() { $('qualityBtn').textContent = 'Quality: ' + (lowFx ? 'Low' : 'High'); }
-updateQualityBtn();
-$('qualityBtn').onclick = () => {
-  lowFx = !lowFx;
-  localStorage.setItem('fl_low', lowFx ? '1' : '0');
+let lowFx = FL_SET.renderMode === 'Performance';
+// Settings (menus.js Apply) land here: effects, canvas size and sound
+function onSettingsChanged() {
+  lowFx = FL_SET.renderMode === 'Performance';
   resize();
-  updateQualityBtn();
-  toast(lowFx ? 'Low quality — fewer effects' : 'High quality — full effects');
-};
-
-$('navProfile').onclick = () => openAcct('account');
+  if (master) master.gain.value = 0.35 * FL_SET.sfxVolume / 100;
+}
+window.onSettingsChanged = onSettingsChanged;
+applySettings();
 $('navFriends').onclick = () => openAcct('friends');
 $('navLeaders').onclick = () => openAcct('leaders');
-$('navCosmetics').onclick = () => openAcct('account');   // outfits live in the account panel
 $('acctTop').onclick = () => openAcct('account');
 
 // ============================================================
@@ -2039,6 +2042,8 @@ function openAcct(tab) {
 }
 function renderAcct() {
   loadParty();
+  headId = acct ? (acct.head || 'none') : 'none';
+  if (typeof renderWallet === 'function') renderWallet();
   updateHubTag();
   renderHeadRow();
   const on = !!acct;
@@ -2164,7 +2169,7 @@ const HEAD_ITEMS = [
   { id: 'tiara', name: 'Tiara', svg: '<path d="M-20 -2 Q0 -22 20 -2" fill="none" stroke="#d9c6ff" stroke-width="4" stroke-linecap="round"/><path d="M-20 -2 Q0 -22 20 -2" fill="none" stroke="#9a86c9" stroke-width="1"/><path d="M-3 -13 L0 -22 L3 -13 Z" fill="#e8f6ff" stroke="#7aa6c9" stroke-width="1"/><circle cx="0" cy="-16" r="3.5" fill="#7adfff" stroke="#3a7aa0" stroke-width="1"/><circle cx="-11" cy="-8" r="2.8" fill="#ff9ad5" stroke="#a04a7a" stroke-width="1"/><circle cx="11" cy="-8" r="2.8" fill="#ff9ad5" stroke="#a04a7a" stroke-width="1"/>' },
   { id: 'backcap', name: 'Backwards cap', svg: '<path d="M-22 0 Q-24 -30 0 -31 Q24 -30 22 0 Z" fill="#e0463c" stroke="#8a1f19" stroke-width="2" stroke-linejoin="round"/><rect x="-23" y="-5" width="46" height="6" rx="2" fill="#c63a30" stroke="#8a1f19" stroke-width="1.5"/><path d="M8 -3 Q28 -2 34 8 Q22 10 6 2 Z" fill="#b5301f" stroke="#8a1f19" stroke-width="1.5" stroke-linejoin="round"/><path d="M-14 -18 Q-12 -24 -4 -26" stroke="rgba(255,255,255,0.25)" stroke-width="3" fill="none" stroke-linecap="round"/>' },
 ];
-let headId = localStorage.getItem('fl_head') || 'none';
+let headId = 'none';   // from the account (acct.head); guests wear nothing
 if (!HEAD_ITEMS.some(i => i.id === headId)) headId = 'none';
 function headSvgMarkup(name, outfit, itemId) {
   let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) | 0; h = Math.abs(h);
@@ -2183,25 +2188,40 @@ function headSvgMarkup(name, outfit, itemId) {
     ${gear}${cosmetic}
   </svg>`;
 }
-function setHead(id) {
-  headId = id;
-  localStorage.setItem('fl_head', id);
-  updateHubTag();
-  renderHeadRow();
-  sfx.ui();
+// Signed-in players wear what they own (saved on the account). Guests wear Default.
+async function setHead(id) {
+  if (acct) {
+    const r = await api('/api/head', { id });
+    if (!r.ok) {
+      if (r.status === 403 && typeof openBuy === 'function') openBuy(id);
+      else toast(r.data.error || 'Could not wear that');
+      return;
+    }
+    acct = r.data;
+    headId = acct.head || 'none';
+  } else {
+    if (id !== 'none') { toast('Sign in to wear items you own'); return; }
+    headId = 'none';
+  }
+  updateHubTag(); renderHeadRow(); sfx.ui();
+  if (typeof renderLocker === 'function' && !$('pgLocker').classList.contains('hidden')) renderLocker();
 }
 function renderHeadRow() {
   const row = $('headRow');
   if (!row) return;
   const name = (nameInput.value || '').trim().slice(0, 16) || 'Player';
   const outfit = (S.OUTFITS[acct ? (acct.outfit || 0) : 0] || S.OUTFITS[0]).color;
+  const owned = new Set(acct && acct.owned ? acct.owned : []);
   row.innerHTML = '';
   for (const it of HEAD_ITEMS) {
+    const meta = S.HEADS.find(h => h.id === it.id);
+    const have = it.id === 'none' || owned.has(it.id);
+    const price = meta ? S.HEAD_RARITY[meta.rarity].price : 0;
     const b = document.createElement('button');
-    b.className = 'headTile' + (it.id === headId ? ' on' : '');
-    b.title = it.name;
-    b.innerHTML = headSvgMarkup(name, outfit, it.id);
-    b.onclick = () => setHead(it.id);
+    b.className = 'headTile' + (it.id === headId ? ' on' : '') + (have ? '' : ' locked');
+    b.title = (meta ? meta.name : 'Default') + (have || !meta ? '' : ' · ' + price + ' T-Bucks');
+    b.innerHTML = headSvgMarkup(name, outfit, it.id) + (have ? '' : '<span class="lockTag">' + price + '</span>');
+    b.onclick = () => (have || !acct ? setHead(it.id) : openBuy(it.id));
     row.append(b);
   }
 }
@@ -2312,5 +2332,365 @@ function fallbackCopy(text, done) {
   ta.remove();
 }
 $('reconnectBtn').onclick = () => location.reload();
+
+
+// ============ Hub pages: shop, locker, battle pass, career, settings (was menus.js) ============
+// ============================================================
+//  Hub pages: top bar, Item Shop, Locker, Battle Pass, Career, Settings, buy dialog.
+//  Loaded after game.js. Uses acct, api(), show(), toast(), headSvgMarkup() and renderOutfits()/renderHeadRow() from game.js.
+// ============================================================
+const PAGE_NAV = { menu: 'navPlay', pgShop: 'navShop', pgLocker: 'navLocker', pgPass: 'navPass', pgCareer: 'navCareer', pgSettings: 'navSettings' };
+const COIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#ffd23f" stroke="#b07a00" stroke-width="1.5"/><circle cx="12" cy="12" r="6.2" fill="none" stroke="#fff3a6" stroke-width="1.6"/><path d="M9.6 8.8h3.4a2.2 2.2 0 0 1 0 4.4H9.6zM9.6 13.2h3.8a2.2 2.2 0 0 1 0 4.4H9.6z" fill="#b07a00" opacity=".75"/></svg>';
+const LOCK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5" fill="currentColor"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>';
+const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function headMeta(id) { return S.HEADS.find(h => h.id === id) || null; }
+function headName(id) { const m = headMeta(id); return m ? m.name : 'Default'; }
+function headRarity(id) { const m = headMeta(id); return m ? S.HEAD_RARITY[m.rarity] : null; }
+function outfitNow() { return S.OUTFITS[acct ? (acct.outfit || 0) : 0] || S.OUTFITS[0]; }
+function ownedSet() { return new Set(acct && acct.owned ? acct.owned : []); }
+function playerName() { return (acct && acct.name) || (nameInput.value || '').trim().slice(0, 16) || 'Player'; }
+function fmtNum(n) { return (Number(n) || 0).toLocaleString('en-US'); }
+function coinHtml(n) { return '<span class="coin">' + COIN_SVG + '</span><b>' + fmtNum(n) + '</b>'; }
+
+// ---------- top bar and page switching ----------
+function navFor(id) {
+  const hubPage = id === 'menu' || id === 'acctPanel' || (typeof id === 'string' && id.startsWith('pg'));
+  $('topNav').classList.toggle('hidden', !(hubPage && mode === 'menu'));
+  document.querySelectorAll('.tnTab').forEach(b => b.classList.toggle('on', b.id === PAGE_NAV[id]));
+}
+function openPage(id) {
+  show(id);
+  if (id === 'pgShop') loadShop();
+  if (id === 'pgLocker') renderLocker();
+  if (id === 'pgPass') loadPass();
+  if (id === 'pgCareer') renderCareer();
+  if (id === 'pgSettings') renderSettings();
+}
+function renderWallet() {
+  const on = !!acct;
+  $('tnTbucks').textContent = on ? fmtNum(acct.tbucks || 0) : '-';
+  $('tnCoins').classList.toggle('dim', !on);
+  $('tnLevel').querySelector('b').textContent = on ? acct.level : '1';
+  $('tnLevel').title = on ? 'Level ' + acct.level : 'Sign in to level up';
+}
+document.querySelectorAll('.tnTab[data-page]').forEach(b => b.onclick = () => openPage(b.dataset.page));
+document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => openPage('menu'));
+$('navSettings').onclick = () => openPage('pgSettings');
+$('tnCoins').onclick = () => openPage('pgShop');
+$('tnLevel').onclick = () => openPage('pgCareer');
+
+// ---------- sign-in nudge ----------
+function needSignIn(what) {
+  toast('Sign in to ' + what);
+  openAcct('account');
+}
+
+// ---------- item shop ----------
+let shopData = null, pendingBuy = null, shopTimer = null;
+async function loadShop() {
+  const r = await api('/api/store');
+  if (!r.ok) { $('shopMsg').textContent = 'Could not load the shop. Try again soon.'; return; }
+  shopData = r.data;
+  $('shopMsg').textContent = acct ? '' : 'Sign in to buy items with T-Bucks. New accounts start with 500 T-Bucks.';
+  renderShop();
+  clearInterval(shopTimer);
+  shopTimer = setInterval(tickShopTimer, 1000);
+  tickShopTimer();
+}
+function tickShopTimer() {
+  if (!shopData) return;
+  const s = Math.max(0, Math.floor((shopData.nextAt - Date.now()) / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  $('shopTimer').textContent = 'Next rotation in ' + [h, m, sec].map(v => String(v).padStart(2, '0')).join(':');
+}
+function shopCard(id, big) {
+  const rar = headRarity(id);
+  const owned = ownedSet().has(id) || !!(shopData && shopData.owned && shopData.owned.includes(id));
+  const b = document.createElement('button');
+  b.className = 'shopCard' + (big ? ' big' : '') + (owned ? ' owned' : '');
+  b.style.setProperty('--rar', rar ? rar.color : '#9aa7b4');
+  const art = document.createElement('div'); art.className = 'scArt';
+  art.innerHTML = headSvgMarkup(playerName(), outfitNow().color, id);
+  const info = document.createElement('div'); info.className = 'scInfo';
+  const nm = document.createElement('div'); nm.className = 'scName'; nm.textContent = headName(id);
+  const rl = document.createElement('div'); rl.className = 'scRarity'; rl.textContent = rar ? rar.name : '';
+  const pr = document.createElement('div'); pr.className = 'scPrice';
+  pr.innerHTML = owned ? '<span class="ownTag">' + CHECK_SVG + ' Owned</span>' : coinHtml(rar ? rar.price : 0);
+  info.append(nm, rl, pr);
+  b.append(art, info);
+  b.onclick = () => openBuy(id);
+  return b;
+}
+function renderShop() {
+  if (!shopData) return;
+  const f = $('shopFeatured'), d = $('shopDaily');
+  f.innerHTML = ''; d.innerHTML = '';
+  shopData.featured.forEach(id => f.append(shopCard(id, true)));
+  shopData.daily.forEach(id => d.append(shopCard(id, false)));
+  renderWallet();
+}
+function openBuy(id) {
+  if (ownedSet().has(id)) { toast('You already own ' + headName(id)); return; }
+  if (!acct) { needSignIn('buy items'); return; }
+  const rar = headRarity(id);
+  const price = rar ? rar.price : 0;
+  pendingBuy = id;
+  $('buyHero').innerHTML = headSvgMarkup(playerName(), outfitNow().color, id);
+  $('buyName').textContent = headName(id);
+  $('buyRarity').textContent = rar ? rar.name : '';
+  $('buyRarity').style.color = rar ? rar.color : '';
+  $('buyPrice').innerHTML = coinHtml(price) + '<span class="have">You have ' + fmtNum(acct.tbucks || 0) + '</span>';
+  const short = (acct.tbucks || 0) < price;
+  $('buyYes').disabled = short;
+  $('buyYes').textContent = short ? 'Not enough T-Bucks' : 'Buy now';
+  $('buyMsg').textContent = '';
+  $('buyModal').classList.remove('hidden');
+}
+function closeBuy() { $('buyModal').classList.add('hidden'); pendingBuy = null; }
+$('buyNo').onclick = closeBuy;
+$('buyModal').addEventListener('click', e => { if (e.target.id === 'buyModal') closeBuy(); });
+$('buyYes').onclick = async () => {
+  if (!pendingBuy) return;
+  const id = pendingBuy;
+  $('buyYes').disabled = true;
+  const r = await api('/api/store/buy', { id });
+  $('buyYes').disabled = false;
+  if (!r.ok) { $('buyMsg').textContent = r.data.error || 'Could not buy that.'; return; }
+  acct = r.data;
+  if (shopData) shopData.owned = acct.owned;
+  closeBuy();
+  toast('Bought ' + headName(id) + '!');
+  renderShop(); renderWallet();
+  if (!$('pgLocker').classList.contains('hidden')) renderLocker();
+};
+
+// ---------- locker ----------
+let lockerTab = 'outfit';
+function renderLocker() {
+  const o = outfitNow();
+  $('slotOutfitSw').style.background = o.color;
+  $('slotOutfitName').textContent = o.name;
+  $('slotHeadName').textContent = headName(headId);
+  $('slotHeadIco').innerHTML = headId === 'none' ? '<span class="noHead">None</span>' : headSvgMarkup(playerName(), o.color, headId);
+  $('lkOutfitName').textContent = o.name;
+  $('lkHeadName').textContent = headName(headId);
+  $('lockerHero').innerHTML = headSvgMarkup(playerName(), o.color, headId);
+  $('slotOutfit').classList.toggle('on', lockerTab === 'outfit');
+  $('slotHead').classList.toggle('on', lockerTab === 'head');
+  $('outfitRow').classList.toggle('hidden', lockerTab !== 'outfit');
+  $('headRow').classList.toggle('hidden', lockerTab !== 'head');
+  $('lkPickTitle').textContent = lockerTab === 'outfit' ? 'Outfits' : 'Headwear';
+  $('lkSignIn').classList.toggle('hidden', !!acct);
+  renderOutfits();
+  renderHeadRow();
+  renderWallet();
+}
+$('slotOutfit').onclick = () => { lockerTab = 'outfit'; renderLocker(); };
+$('slotHead').onclick = () => { lockerTab = 'head'; renderLocker(); };
+
+// ---------- battle pass ----------
+let passData = null;
+async function loadPass() {
+  const r = await api('/api/pass');
+  if (!r.ok) { $('passMsg').textContent = 'Could not load the battle pass.'; return; }
+  passData = r.data;
+  renderPass();
+}
+function passRewardHtml(rw) {
+  if (!rw) return '<span class="rwNone">-</span>';
+  if (rw.t === 'tbucks') return '<span class="rwCoin">' + COIN_SVG + '</span><b>' + fmtNum(rw.n) + '</b>';
+  const rar = headRarity(rw.id);
+  return '<span class="rwHead" style="--rar:' + (rar ? rar.color : '#9aa7b4') + '">' + headSvgMarkup(playerName(), outfitNow().color, rw.id) + '</span><small>' + headName(rw.id) + '</small>';
+}
+function renderPass() {
+  const d = passData;
+  if (!d) return;
+  $('passSeason').textContent = d.season;
+  $('passTier').textContent = d.tier;
+  $('passMax').textContent = d.tiers;
+  $('passXp').textContent = fmtNum(d.xp) + ' XP';
+  const into = d.tier >= d.tiers ? d.xpPerTier : d.xp - d.tier * d.xpPerTier;
+  $('passFill').style.width = Math.min(100, (into / d.xpPerTier) * 100) + '%';
+  $('passPremiumBtn').disabled = d.premium || !acct;
+  $('passPremiumBtn').textContent = d.premium ? 'Premium unlocked' : 'Unlock premium · ' + fmtNum(d.premiumCost);
+  $('passLevelsBtn').disabled = d.tier >= d.tiers || !acct;
+  $('passLevelsBtn').textContent = 'Buy tier · ' + d.tierCost;
+  $('passHero').innerHTML = headSvgMarkup(playerName(), outfitNow().color, headId);
+  $('passMsg').textContent = acct ? '' : 'Sign in to earn and claim rewards.';
+  const track = $('passTrack');
+  track.innerHTML = '';
+  for (const row of d.rows) {
+    const col = document.createElement('div');
+    col.className = 'ptCol' + (row.tier <= d.tier ? ' reached' : '') + (row.tier === d.tier ? ' current' : '');
+    const n = document.createElement('div'); n.className = 'ptNum'; n.textContent = row.tier;
+    col.append(n);
+    for (const kind of ['free', 'paid']) {
+      const rw = row[kind];
+      const claimed = kind === 'free' ? row.freeClaimed : row.paidClaimed;
+      const locked = kind === 'paid' && !d.premium;
+      const ready = !claimed && row.tier <= d.tier && !locked && !!rw;
+      const b = document.createElement('button');
+      b.className = 'ptReward ' + kind + (claimed ? ' claimed' : ready ? ' ready' : '') + (locked ? ' locked' : '');
+      b.innerHTML = '<div class="ptBody">' + (rw ? passRewardHtml(rw) : '') + '</div>'
+        + (claimed ? '<span class="ptState">' + CHECK_SVG + '</span>' : locked ? '<span class="ptState">' + LOCK_SVG + '</span>' : '');
+      b.title = (kind === 'paid' ? 'Premium: ' : 'Free: ') + (rw ? (rw.t === 'tbucks' ? rw.n + ' T-Bucks' : headName(rw.id)) : 'nothing') + (row.tier > d.tier ? ' (reach tier ' + row.tier + ')' : '');
+      b.onclick = () => claimPass(kind, row.tier, ready);
+      col.append(b);
+    }
+    track.append(col);
+  }
+  const cur = track.querySelector('.ptCol.current');
+  if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+async function claimPass(kind, tier, ready) {
+  if (!acct) { needSignIn('claim rewards'); return; }
+  if (!ready) {
+    toast(passData.tier < tier ? 'Reach tier ' + tier + ' first' : (kind === 'paid' && !passData.premium ? 'Unlock the premium pass to claim this' : 'Already claimed'));
+    return;
+  }
+  const r = await api('/api/pass/claim', { tier, track: kind });
+  if (!r.ok) { toast(r.data.error || 'Could not claim that'); return; }
+  applyPassResponse(r.data);
+  const g = r.data.granted;
+  toast(g.t === 'tbucks' ? 'Claimed ' + g.n + ' T-Bucks' : 'Claimed ' + headName(g.id));
+}
+function applyPassResponse(d) {
+  passData = d;
+  if (acct) {
+    acct.tbucks = d.tbucks;
+    acct.premium = d.premium;
+    acct.passXp = d.xp;
+    if (d.tier !== undefined) acct.passTier = d.tier;
+  }
+  renderPass(); renderWallet();
+}
+$('passLevelsBtn').onclick = async () => {
+  if (!acct) { needSignIn('buy levels'); return; }
+  const r = await api('/api/pass/levels', {});
+  if (!r.ok) { $('passMsg').textContent = r.data.error || 'Could not buy that tier.'; return; }
+  applyPassResponse(r.data);
+  toast('Battle pass tier ' + r.data.tier + ' reached');
+};
+$('passPremiumBtn').onclick = async () => {
+  if (!acct) { needSignIn('unlock the premium pass'); return; }
+  const r = await api('/api/pass/premium', {});
+  if (!r.ok) { $('passMsg').textContent = r.data.error || 'Could not unlock the premium pass.'; return; }
+  applyPassResponse(r.data);
+  toast('Premium pass unlocked');
+};
+
+// ---------- career (levels and stats) ----------
+function renderCareer() {
+  const on = !!acct;
+  $('careerName').textContent = on ? acct.name : 'Sign in';
+  $('careerSignIn').classList.toggle('hidden', on);
+  const li = S.levelInfo(on ? (acct.xp || 0) : 0);
+  $('careerLevel').textContent = li.level;
+  const C = 2 * Math.PI * 52;
+  $('ringFill').style.strokeDasharray = C + 'px';
+  $('ringFill').style.strokeDashoffset = (C * (1 - Math.min(1, li.pct))) + 'px';
+  $('careerXpFill').style.width = (li.pct * 100) + '%';
+  $('careerXpTxt').textContent = li.need ? fmtNum(li.into) + ' / ' + fmtNum(li.need) + ' XP to level ' + (li.level + 1) : 'Max level';
+  $('careerTotalXp').textContent = fmtNum(on ? acct.xp || 0 : 0);
+  $('stMatches').textContent = on ? acct.matches : '-';
+  $('stWins').textContent = on ? acct.wins : '-';
+  $('stKills').textContent = on ? acct.kills : '-';
+  $('stBest').textContent = on && acct.best ? '#' + acct.best : '-';
+  $('stTbucks').textContent = on ? fmtNum(acct.tbucks || 0) : '-';
+  $('stItems').textContent = on ? (acct.owned || []).length : '-';
+  $('stPass').textContent = on ? (acct.premium ? 'Premium' : 'Free track') : '-';
+  renderWallet();
+}
+
+// ---------- settings ----------
+const SET_ROWS = [
+  { sec: 'Display' },
+  { key: 'windowMode', label: 'Window mode', opts: ['Fullscreen', 'Windowed'],
+    desc: 'Fullscreen fills your screen. Windowed keeps the game in a browser tab. Browsers do not offer a separate windowed-fullscreen mode, so the page fills the window in Windowed.' },
+  { key: 'vsync', label: 'Vsync', fixed: 'On (browser)',
+    desc: 'The browser already matches frames to your screen, so Vsync is always on. It cannot be turned off from a web page.' },
+  { key: 'renderScale', label: 'Resolution scale', opts: [50, 75, 100], fmt: v => v === 100 ? 'Native' : v + '%',
+    desc: 'How many pixels the game draws. Lower it to run smoother on a slow device. Native is sharpest.' },
+  { key: 'frameLimit', label: 'Frame rate limit', opts: [0, 30, 60, 120], fmt: v => v ? v + ' FPS' : 'Unlimited',
+    desc: 'Caps how often the game draws. Set 60 to save battery on a laptop, or Unlimited to use every frame your screen can show.' },
+  { key: 'renderMode', label: 'Rendering mode', opts: ['Performance', 'Quality'],
+    desc: 'Performance draws fewer effects such as particles and smoke. Quality draws every effect.' },
+  { key: 'showFps', label: 'Show FPS', opts: [false, true], fmt: v => v ? 'On' : 'Off',
+    desc: 'Shows the frame rate in the top-left corner of a match.' },
+  { sec: 'Graphics' },
+  { key: 'brightness', label: 'Brightness', range: [50, 150, 5], fmt: v => v + '%',
+    desc: 'Makes the game brighter or darker. 100% is the normal look.' },
+  { key: 'uiContrast', label: 'UI contrast', range: [80, 140, 5], fmt: v => (v / 100).toFixed(2) + 'x',
+    desc: 'Adjusts the contrast of menus and the HUD so text is easier to read.' },
+  { sec: 'Audio' },
+  { key: 'sfxVolume', label: 'Sound effects', range: [0, 100, 5], fmt: v => v + '%',
+    desc: 'Volume of gunshots, footsteps and other effects. 0% is silent.' },
+];
+let setDraft = null, setDescKey = 'windowMode';
+function describe(key) {
+  setDescKey = key;
+  const row = SET_ROWS.find(r => r.key === key) || SET_ROWS[1];
+  $('setDescTitle').textContent = row.label || 'Window mode';
+  $('setDescBody').textContent = row.desc;
+}
+function renderSettings() {
+  if (!setDraft) setDraft = { ...FL_SET };
+  const list = $('setList');
+  list.innerHTML = '';
+  for (const row of SET_ROWS) {
+    if (row.sec) {
+      const h = document.createElement('div'); h.className = 'setSec'; h.textContent = row.sec; list.append(h); continue;
+    }
+    const el = document.createElement('div'); el.className = 'setRow';
+    const lab = document.createElement('span'); lab.className = 'setLab'; lab.textContent = row.label;
+    const ctl = document.createElement('div'); ctl.className = 'setCtl';
+    if (row.fixed) {
+      const v = document.createElement('span'); v.className = 'setVal fixed'; v.textContent = row.fixed; ctl.append(v);
+    } else if (row.opts) {
+      const cur = setDraft[row.key];
+      const idx = Math.max(0, row.opts.indexOf(cur));
+      const step = dir => {
+        setDraft[row.key] = row.opts[(idx + dir + row.opts.length) % row.opts.length];
+        renderSettings(); describe(row.key);
+      };
+      const l = document.createElement('button'); l.className = 'arrow'; l.textContent = '‹'; l.setAttribute('aria-label', 'Previous');
+      l.onclick = e => { e.stopPropagation(); step(-1); };
+      const v = document.createElement('span'); v.className = 'setVal'; v.textContent = row.fmt ? row.fmt(cur) : String(cur);
+      const r = document.createElement('button'); r.className = 'arrow'; r.textContent = '›'; r.setAttribute('aria-label', 'Next');
+      r.onclick = e => { e.stopPropagation(); step(1); };
+      ctl.append(l, v, r);
+    } else if (row.range) {
+      const [min, max, stepN] = row.range;
+      const inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = stepN;
+      inp.value = setDraft[row.key];
+      const v = document.createElement('span'); v.className = 'setVal'; v.textContent = row.fmt(setDraft[row.key]);
+      inp.oninput = () => { setDraft[row.key] = Number(inp.value); v.textContent = row.fmt(setDraft[row.key]); };
+      inp.onfocus = () => describe(row.key);
+      ctl.append(inp, v);
+    }
+    el.append(lab, ctl);
+    el.onmouseenter = () => describe(row.key || 'vsync');
+    el.onclick = () => describe(row.key || 'vsync');
+    list.append(el);
+  }
+  describe(setDescKey);
+}
+$('setApply').onclick = () => {
+  const prev = FL_SET.windowMode;
+  FL_SET = { ...setDraft };
+  saveSettings();
+  if (FL_SET.windowMode !== prev || FL_SET.windowMode === 'Fullscreen') applyWindowMode();
+  applySettings();
+  toast('Settings saved');
+};
+$('setDefault').onclick = () => { setDraft = { ...FL_SET_DEFAULTS }; renderSettings(); toast('Defaults loaded. Press Apply to save.'); };
+// leaving Settings without Apply throws the draft away
+document.querySelectorAll('#pgSettings [data-back]').forEach(b => b.addEventListener('click', () => { setDraft = null; }));
+
+// ---------- start ----------
+renderWallet();
+// the lobby opens without show(), so set the top bar for the first screen
+navFor(['pgShop', 'pgLocker', 'pgPass', 'pgCareer', 'pgSettings', 'acctPanel', 'menu'].find(id => !$(id).classList.contains('hidden')) || 'menu');
 
 })();

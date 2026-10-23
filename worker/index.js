@@ -146,6 +146,14 @@ export class Accounts {
       // cosmetics: the chosen outfit index (added after launch, so check the columns first)
       const cols = this.sql.exec('PRAGMA table_info(users)').toArray().map(c => c.name);
       if (!cols.includes('outfit')) this.sql.exec('ALTER TABLE users ADD COLUMN outfit INTEGER NOT NULL DEFAULT 0');
+      // store, levels and battle pass
+      if (!cols.includes('xp')) this.sql.exec('ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0');
+      if (!cols.includes('tbucks')) this.sql.exec('ALTER TABLE users ADD COLUMN tbucks INTEGER NOT NULL DEFAULT 0');
+      if (!cols.includes('head')) this.sql.exec("ALTER TABLE users ADD COLUMN head TEXT NOT NULL DEFAULT 'none'");
+      if (!cols.includes('bp_xp')) this.sql.exec('ALTER TABLE users ADD COLUMN bp_xp INTEGER NOT NULL DEFAULT 0');
+      if (!cols.includes('bp_premium')) this.sql.exec('ALTER TABLE users ADD COLUMN bp_premium INTEGER NOT NULL DEFAULT 0');
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS owned (\n        user_id INTEGER NOT NULL, item_id TEXT NOT NULL, PRIMARY KEY (user_id, item_id))`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS claims (\n        user_id INTEGER NOT NULL, track TEXT NOT NULL, tier INTEGER NOT NULL, PRIMARY KEY (user_id, track, tier))`);
     });
   }
 
@@ -176,6 +184,13 @@ export class Accounts {
       if (path === '/api/party/accept' && method === 'POST') return this.partyAccept(request, await request.json());
       if (path === '/api/party/decline' && method === 'POST') return this.partyDecline(request, await request.json());
       if (path === '/api/party/leave' && method === 'POST') return this.partyLeave(request, await request.json());
+      if (path === '/api/store' && method === 'GET') return this.store(request);
+      if (path === '/api/store/buy' && method === 'POST') return this.storeBuy(request, await request.json());
+      if (path === '/api/head' && method === 'POST') return this.setHead(request, await request.json());
+      if (path === '/api/pass' && method === 'GET') return this.passState(request);
+      if (path === '/api/pass/claim' && method === 'POST') return this.passClaim(request, await request.json());
+      if (path === '/api/pass/premium' && method === 'POST') return this.passPremium(request);
+      if (path === '/api/pass/levels' && method === 'POST') return this.passLevels(request);
       return json({ error: 'not found' }, 404);
     } catch (e) {
       return json({ error: 'bad request' }, 400);
@@ -219,7 +234,125 @@ export class Accounts {
 
   statsOf(u) {
     const unlocked = S.OUTFITS.map((_, i) => i).filter(i => this.outfitUnlocked(u, i));
-    return { name: u.name, matches: u.matches, wins: u.wins, kills: u.kills, best: u.best, outfit: u.outfit || 0, unlocked };
+    const lv = S.levelInfo(u.xp || 0);
+    const owned = this.sql.exec('SELECT item_id FROM owned WHERE user_id = ?', u.id).toArray().map(r => r.item_id);
+    return {
+      name: u.name, matches: u.matches, wins: u.wins, kills: u.kills, best: u.best, outfit: u.outfit || 0, unlocked,
+      xp: u.xp || 0, level: lv.level, levelInto: lv.into, levelNeed: lv.need,
+      tbucks: u.tbucks || 0, head: u.head || 'none', owned,
+      premium: !!u.bp_premium, passTier: S.passTier(u.bp_xp || 0), passXp: u.bp_xp || 0,
+    };
+  }
+
+  // ---- store ----
+  store(request) {
+    const u = this.userFromRequest(request);
+    const rot = S.storeRotation(S.storeDay());
+    const prices = {};
+    for (const h of S.HEADS) prices[h.id] = S.headPrice(h.id);
+    const owned = u ? this.sql.exec('SELECT item_id FROM owned WHERE user_id = ?', u.id).toArray().map(r => r.item_id) : [];
+    const nextAt = (S.storeDay() + 1) * 86400000;
+    return json({ featured: rot.featured, daily: rot.daily, prices, owned, tbucks: u ? (u.tbucks || 0) : null, nextAt });
+  }
+
+  storeBuy(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Sign in to buy items' }, 401);
+    const id = String(body.id || '');
+    const price = S.headPrice(id);
+    if (!price) return json({ error: 'That item is not for sale' }, 400);
+    if (this.one('SELECT item_id FROM owned WHERE user_id = ? AND item_id = ?', u.id, id)) return json({ error: 'You already own that' }, 409);
+    if ((u.tbucks || 0) < price) return json({ error: 'Not enough T-Bucks' }, 402);
+    this.sql.exec('UPDATE users SET tbucks = tbucks - ? WHERE id = ?', price, u.id);
+    this.sql.exec('INSERT INTO owned (user_id, item_id) VALUES (?, ?)', u.id, id);
+    return json(this.statsOf(this.one('SELECT * FROM users WHERE id = ?', u.id)));
+  }
+
+  setHead(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Not signed in' }, 401);
+    const id = String(body.id || 'none');
+    if (id !== 'none') {
+      if (!S.headPrice(id)) return json({ error: 'Unknown headwear' }, 400);
+      if (!this.one('SELECT item_id FROM owned WHERE user_id = ? AND item_id = ?', u.id, id)) return json({ error: 'You do not own that yet' }, 403);
+    }
+    this.sql.exec('UPDATE users SET head = ? WHERE id = ?', id, u.id);
+    return json(this.statsOf(this.one('SELECT * FROM users WHERE id = ?', u.id)));
+  }
+
+  // ---- battle pass ----
+  passView(u) {
+    const tier = S.passTier(u ? (u.bp_xp || 0) : 0);
+    const claimed = u ? this.sql.exec('SELECT track, tier FROM claims WHERE user_id = ?', u.id).toArray() : [];
+    const tiers = [];
+    for (let t = 1; t <= S.PASS.tiers; t++) {
+      const r = S.passRewards(t);
+      tiers.push({
+        tier: t, free: r.free, paid: r.paid,
+        freeClaimed: claimed.some(c => c.track === 'free' && c.tier === t),
+        paidClaimed: claimed.some(c => c.track === 'paid' && c.tier === t),
+      });
+    }
+    return json({
+      season: S.PASS.name, xpPerTier: S.PASS.xpPerTier, tiers: S.PASS.tiers,
+      xp: u ? (u.bp_xp || 0) : 0, tier, premium: !!(u && u.bp_premium),
+      premiumCost: S.PASS.premiumCost, tierCost: S.PASS.tierCost,
+      tbucks: u ? (u.tbucks || 0) : null, rows: tiers,
+    });
+  }
+
+  passState(request) {
+    return this.passView(this.userFromRequest(request));
+  }
+
+  async passClaim(request, body) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Sign in to claim rewards' }, 401);
+    const tier = Math.floor(Number(body.tier) || 0);
+    const track = body.track === 'paid' ? 'paid' : 'free';
+    if (tier < 1 || tier > S.PASS.tiers) return json({ error: 'No such tier' }, 400);
+    if (tier > S.passTier(u.bp_xp || 0)) return json({ error: 'Reach that tier first' }, 403);
+    if (track === 'paid' && !u.bp_premium) return json({ error: 'Unlock the premium pass first' }, 403);
+    if (this.one('SELECT tier FROM claims WHERE user_id = ? AND track = ? AND tier = ?', u.id, track, tier)) return json({ error: 'Already claimed' }, 409);
+    const reward = S.passRewards(tier)[track];
+    if (!reward) return json({ error: 'Nothing to claim here' }, 400);
+    let granted = reward;
+    if (reward.t === 'head') {
+      if (this.one('SELECT item_id FROM owned WHERE user_id = ? AND item_id = ?', u.id, reward.id)) {
+        granted = { t: 'tbucks', n: S.headPrice(reward.id) / 2 };   // already owned: refund half its price
+        this.sql.exec('UPDATE users SET tbucks = tbucks + ? WHERE id = ?', granted.n, u.id);
+      } else {
+        this.sql.exec('INSERT INTO owned (user_id, item_id) VALUES (?, ?)', u.id, reward.id);
+      }
+    } else {
+      this.sql.exec('UPDATE users SET tbucks = tbucks + ? WHERE id = ?', reward.n, u.id);
+    }
+    this.sql.exec('INSERT INTO claims (user_id, track, tier) VALUES (?, ?, ?)', u.id, track, tier);
+    return json({ granted, ...(await this.passViewBody(u.id)) });
+  }
+
+  async passViewBody(userId) {
+    const u = this.one('SELECT * FROM users WHERE id = ?', userId);
+    const res = this.passView(u);
+    return JSON.parse(await res.text());
+  }
+
+  passPremium(request) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Sign in first' }, 401);
+    if (u.bp_premium) return json({ error: 'You already have the premium pass' }, 409);
+    if ((u.tbucks || 0) < S.PASS.premiumCost) return json({ error: 'Not enough T-Bucks' }, 402);
+    this.sql.exec('UPDATE users SET tbucks = tbucks - ?, bp_premium = 1 WHERE id = ?', S.PASS.premiumCost, u.id);
+    return this.passView(this.one('SELECT * FROM users WHERE id = ?', u.id));
+  }
+
+  passLevels(request) {
+    const u = this.userFromRequest(request);
+    if (!u) return json({ error: 'Sign in first' }, 401);
+    if (S.passTier(u.bp_xp || 0) >= S.PASS.tiers) return json({ error: 'Already at the top tier' }, 409);
+    if ((u.tbucks || 0) < S.PASS.tierCost) return json({ error: 'Not enough T-Bucks' }, 402);
+    this.sql.exec('UPDATE users SET tbucks = tbucks - ?, bp_xp = bp_xp + ? WHERE id = ?', S.PASS.tierCost, S.PASS.xpPerTier, u.id);
+    return this.passView(this.one('SELECT * FROM users WHERE id = ?', u.id));
   }
 
   // ---- routes ----
@@ -231,7 +364,7 @@ export class Accounts {
     if (this.one('SELECT id FROM users WHERE name = ?', name)) return json({ error: 'That name is taken' }, 409);
     const salt = bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
     const hash = await this.hash(password, salt);
-    this.sql.exec('INSERT INTO users (name, salt, hash, created) VALUES (?, ?, ?, ?)', name, salt, hash, Date.now());
+    this.sql.exec('INSERT INTO users (name, salt, hash, created, tbucks) VALUES (?, ?, ?, ?, ?)', name, salt, hash, Date.now(), S.WELCOME_TBUCKS);
     const u = this.one('SELECT * FROM users WHERE name = ?', name);
     return json({ token: this.newSession(u.id), ...this.statsOf(u) });
   }
@@ -425,11 +558,16 @@ export class Accounts {
       const place = Math.max(0, Math.floor(Number(r.place) || 0));
       const kills = Math.max(0, Math.floor(Number(r.kills) || 0));
       const won = r.won ? 1 : 0;
+      const before = this.one('SELECT xp FROM users WHERE id = ?', u.id).xp;
+      const rew = S.matchReward({ kills, won: !!won, place });
       this.sql.exec(
         `UPDATE users SET matches = matches + 1, wins = wins + ?, kills = kills + ?,
-           best = CASE WHEN best = 0 OR (? > 0 AND ? < best) THEN ? ELSE best END WHERE id = ?`,
-        won, kills, place, place, place, u.id
+           best = CASE WHEN best = 0 OR (? > 0 AND ? < best) THEN ? ELSE best END,
+           xp = xp + ?, bp_xp = bp_xp + ?, tbucks = tbucks + ? WHERE id = ?`,
+        won, kills, place, place, place, rew.xp, rew.xp, rew.tbucks, u.id
       );
+      const levelsGained = S.levelInfo(before + rew.xp).level - S.levelInfo(before).level;
+      if (levelsGained > 0) this.sql.exec('UPDATE users SET tbucks = tbucks + ? WHERE id = ?', levelsGained * S.LEVEL_UP_TBUCKS, u.id);
     }
     return json({ ok: true });
   }

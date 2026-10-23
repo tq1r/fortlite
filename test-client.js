@@ -69,6 +69,8 @@ const sandbox = {
   Image: function FakeImage() { this.complete = false; this.naturalWidth = 0; this.src = ''; },
   location: { protocol: 'http:', host: 'localhost:3000', href: 'http://localhost:3000/' },
   document: {
+    documentElement: { style: { setProperty() {} } },
+    querySelectorAll() { return []; },
     getElementById(id) {
       if (!byId.has(id)) {
         byId.set(id, id === 'game' || id === 'minimap' || id === 'bigMapCanvas' ? makeCanvas() : makeNode('div'));
@@ -94,12 +96,14 @@ vm.createContext(sandbox);
 const sharedSrc = fs.readFileSync(path.join(__dirname, 'shared.js'), 'utf8');
 const gameSrc = fs.readFileSync(path.join(__dirname, 'public', 'game.js'), 'utf8');
 const artSrc = fs.readFileSync(path.join(__dirname, 'public', 'art.js'), 'utf8');
+const settingsSrc = fs.readFileSync(path.join(__dirname, 'public', 'settings.js'), 'utf8');
 let failed = 0;
 const ok = (c, l) => { if (c) console.log('  PASS', l); else { failed++; console.log('  FAIL:', l); } };
 
 try {
   vm.runInContext(sharedSrc, sandbox, { filename: 'shared.js' });
   vm.runInContext(artSrc, sandbox, { filename: 'art.js' });
+  vm.runInContext(settingsSrc, sandbox, { filename: 'settings.js' });
   vm.runInContext(gameSrc, sandbox, { filename: 'game.js' });
   ok(true, 'game.js loaded without exceptions');
 } catch (e) {
@@ -135,12 +139,11 @@ try {
   byId.get('duoBtn').onclick();
   ok(sandbox.WebSocket.last === beforeDuo, 'guest duo is refused (no duo socket opened)');
 
-  // quality toggle
-  byId.get('qualityBtn').onclick();
-  ok(byId.get('qualityBtn').textContent.includes('Low'), 'quality toggles to Low');
+  // settings (the Quality button moved into Settings): defaults load with a 60 FPS limit
+  ok(vm.runInContext('FL_SET.frameLimit', sandbox) === 60, 'settings load with the 60 FPS default');
 
   // account panel (signed out: sign-in form)
-  byId.get('navProfile').onclick();
+  byId.get('acctTop').onclick();
   ok(!byId.get('acctPanel').classList.contains('hidden'), 'account panel opens');
   byId.get('acctClose').onclick();
   ok(byId.get('acctPanel').classList.contains('hidden'), 'account panel closes');

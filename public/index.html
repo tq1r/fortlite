@@ -25,6 +25,8 @@
   </div>
 </div>
 
+<div id="fpsBox" class="hidden" aria-hidden="true">60 FPS</div>
+
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
   <div id="stormBar"><span class="stormIco"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 7v5.4l3.4 2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span><span class="stormLbl">The Fade</span><span id="stormTxt">-</span></div>
@@ -98,23 +100,29 @@
   <button id="specNext">&#8250;</button>
 </div>
 
+<!-- ============ TOP BAR (hub pages) ============ -->
+<header id="topNav" class="topNav hidden">
+  <span class="tnLogo">FORTLITE</span>
+  <nav class="tnTabs" aria-label="Main">
+    <button class="tnTab on" id="navPlay" data-page="menu">Play</button>
+    <button class="tnTab" id="navShop" data-page="pgShop">Item Shop</button>
+    <button class="tnTab" id="navLocker" data-page="pgLocker">Locker</button>
+    <button class="tnTab" id="navPass" data-page="pgPass">Battle Pass</button>
+    <button class="tnTab" id="navCareer" data-page="pgCareer">Career</button>
+    <button class="tnTab" id="navFriends">Friends</button>
+    <button class="tnTab" id="navLeaders">Leaderboard</button>
+  </nav>
+  <div class="tnRight">
+    <button class="tnCoins dim" id="tnCoins" title="T-Bucks: open the Item Shop"><span class="coin"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#ffd23f" stroke="#b07a00" stroke-width="1.5"/><circle cx="12" cy="12" r="6.2" fill="none" stroke="#fff3a6" stroke-width="1.6"/></svg></span><b id="tnTbucks">-</b></button>
+    <button class="tnLevel" id="tnLevel" title="Level"><b>1</b></button>
+    <button id="navSettings" class="tnGear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" fill="currentColor"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.3 2.7a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.3 2.7h4l.3-2.7a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+    <button id="acctTop" class="tnAcct">Sign in</button>
+  </div>
+</header>
+
 <!-- ============ MENU (Fortnite-style home screen) ============ -->
 <div id="menu" class="overlay hub">
   <div class="hubBg" aria-hidden="true"></div>
-  <header class="hubTop">
-    <span class="hubLogo">FORTLITE</span>
-    <nav class="hubTabs">
-      <button class="hubTab on" id="tabPlay">Play</button>
-      <button class="hubTab" id="navCosmetics">Locker</button>
-      <button class="hubTab" id="navProfile">Profile</button>
-      <button class="hubTab" id="navFriends">Friends</button>
-      <button class="hubTab" id="navLeaders">Leaderboard</button>
-    </nav>
-    <div class="hubRight">
-      <button id="qualityBtn" class="hubChip">Quality: High</button>
-      <button id="acctTop" class="hubChip">Sign in</button>
-    </div>
-  </header>
 
   <aside class="hubTile">
     <div class="tileTitle">How to play</div>
@@ -147,6 +155,131 @@
   <footer class="hubBottom"><span>Controls are in the Esc menu during a match</span></footer>
 </div>
 
+<!-- ============ ITEM SHOP ============ -->
+<section id="pgShop" class="overlay page hidden" aria-label="Item Shop">
+  <div class="pgBg" aria-hidden="true"></div>
+  <div class="pgScroll">
+    <div class="pgHead"><h1 class="pgTitle">Item Shop</h1><span class="pgTimer" id="shopTimer"></span></div>
+    <h2 class="secTitle">Featured</h2>
+    <div id="shopFeatured" class="shopGrid"></div>
+    <h2 class="secTitle">Daily</h2>
+    <div id="shopDaily" class="shopGrid small"></div>
+    <div class="pgMsg" id="shopMsg"></div>
+  </div>
+  <div class="pgBottom"><span class="pgHint">Items rotate every day at midnight UTC.</span><button class="pgBack" data-back>Back</button></div>
+</section>
+
+<!-- ============ LOCKER ============ -->
+<section id="pgLocker" class="overlay page hidden" aria-label="Locker">
+  <div class="pgBg" aria-hidden="true"></div>
+  <div class="lkWrap">
+    <nav class="lkRail" aria-label="Categories">
+      <button class="railBtn on" title="Character"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4.5 21c0-4.3 3.4-7 7.5-7s7.5 2.7 7.5 7z" fill="currentColor"/></svg></button>
+    </nav>
+    <div class="lkMain">
+      <div class="lkLabel">My Locker Loadout</div>
+      <h1 class="lkTitle">Character</h1>
+      <div class="lkSlots">
+        <button class="slotBtn" id="slotOutfit"><span class="slotSw" id="slotOutfitSw"></span><small>Outfit</small><b id="slotOutfitName">Scout</b></button>
+        <button class="slotBtn" id="slotHead"><span class="slotIco" id="slotHeadIco"></span><small>Headwear</small><b id="slotHeadName">Default</b></button>
+      </div>
+      <div class="lkPickHead"><span id="lkPickTitle">Outfits</span><span class="lkSignIn hidden" id="lkSignIn">Sign in to own and wear headwear</span></div>
+      <div id="outfitRow" class="outfitRow"></div>
+      <div id="headRow" class="headRow hidden"></div>
+      <div class="acctMsg" id="outfitMsg"></div>
+    </div>
+    <div class="lkPreview">
+      <div id="lockerHero" class="lkHero" aria-hidden="true"></div>
+      <div class="lkCaption">
+        <div class="lkKind">Outfit</div><div class="lkName" id="lkOutfitName">Scout</div>
+        <div class="lkKind">Headwear</div><div class="lkName sm" id="lkHeadName">Default</div>
+        <div class="lkUse">Usable in <span>Solo</span><span>Duo</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="pgBottom"><span class="pgHint">Click a slot, then an outfit or headwear to wear it</span><button class="pgBack" data-back>Back</button></div>
+</section>
+
+<!-- ============ BATTLE PASS ============ -->
+<section id="pgPass" class="overlay page hidden" aria-label="Battle Pass">
+  <div class="pgBg" aria-hidden="true"></div>
+  <div class="passTop">
+    <div class="passHero" id="passHero" aria-hidden="true"></div>
+    <div class="passInfo">
+      <span class="seasonTag" id="passSeason">Season 1</span>
+      <h1 class="passTitle">Battle Pass</h1>
+      <p class="passDesc">Earn XP in every match. The free track pays out T-Bucks. Unlock the premium track for headwear and more T-Bucks.</p>
+      <div class="passLvl"><span>Tier <b id="passTier">0</b> / <span id="passMax">100</span></span><span id="passXp">0 XP</span></div>
+      <div class="passBar"><div class="passFill" id="passFill"></div></div>
+      <div class="passBtns">
+        <button id="passLevelsBtn" class="btnY">Buy tier</button>
+        <button id="passPremiumBtn" class="btnB">Unlock premium</button>
+      </div>
+      <div class="pgMsg" id="passMsg"></div>
+    </div>
+  </div>
+  <div class="passTrackWrap"><div class="passTrack" id="passTrack"></div></div>
+  <div class="pgBottom"><span class="pgHint">Tap a reward you have reached to claim it</span><button class="pgBack" data-back>Back</button></div>
+</section>
+
+<!-- ============ CAREER ============ -->
+<section id="pgCareer" class="overlay page hidden" aria-label="Career">
+  <div class="pgBg" aria-hidden="true"></div>
+  <div class="careerWrap">
+    <div class="levelRing" aria-hidden="true">
+      <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="ringBg"/><circle id="ringFill" cx="60" cy="60" r="52" class="ringFg" transform="rotate(-90 60 60)"/></svg>
+      <div class="ringTxt"><small>LEVEL</small><b id="careerLevel">1</b></div>
+    </div>
+    <div class="careerInfo">
+      <h1 class="pgTitle" id="careerName">Player</h1>
+      <div class="xpBar"><div id="careerXpFill" class="xpFill"></div></div>
+      <div class="careerSub" id="careerXpTxt">0 XP</div>
+      <div class="careerSub dim">Lifetime XP <b id="careerTotalXp">0</b> · every new level pays 25 T-Bucks</div>
+      <div class="pgMsg hidden" id="careerSignIn">Sign in to keep your level, stats and items.</div>
+    </div>
+  </div>
+  <div class="statGrid">
+    <div class="statTile"><b id="stMatches">-</b><span>Matches</span></div>
+    <div class="statTile"><b id="stWins">-</b><span>Wins</span></div>
+    <div class="statTile"><b id="stKills">-</b><span>Eliminations</span></div>
+    <div class="statTile"><b id="stBest">-</b><span>Best place</span></div>
+    <div class="statTile"><b id="stTbucks">-</b><span>T-Bucks</span></div>
+    <div class="statTile"><b id="stItems">-</b><span>Items owned</span></div>
+    <div class="statTile"><b id="stPass">-</b><span>Battle Pass</span></div>
+  </div>
+  <div class="pgBottom"><span class="pgHint">Play matches to earn XP and T-Bucks</span><button class="pgBack" data-back>Back</button></div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="pgSettings" class="overlay page hidden" aria-label="Settings">
+  <div class="pgBg" aria-hidden="true"></div>
+  <div class="setWrap">
+    <div class="setTabs"><span class="on">Video &amp; audio</span></div>
+    <div class="setList" id="setList"></div>
+    <aside class="setDesc" aria-live="polite">
+      <h3 id="setDescTitle">Window mode</h3>
+      <p id="setDescBody"></p>
+    </aside>
+  </div>
+  <div class="setFoot">
+    <button id="setApply" class="btnY">Apply</button>
+    <button id="setDefault" class="btnB">Restore to default</button>
+    <button class="pgBack" data-back>Back</button>
+  </div>
+</section>
+
+<!-- ============ BUY ============ -->
+<div id="buyModal" class="overlay modal hidden" role="dialog" aria-label="Buy item">
+  <div class="modalCard">
+    <div class="mHero" id="buyHero" aria-hidden="true"></div>
+    <div class="mRarity" id="buyRarity"></div>
+    <h2 class="mName" id="buyName">Item</h2>
+    <div class="mPrice" id="buyPrice"></div>
+    <div class="mBtns"><button id="buyYes" class="btnY">Buy now</button><button id="buyNo" class="btnB">Cancel</button></div>
+    <div class="pgMsg" id="buyMsg"></div>
+  </div>
+</div>
+
 <!-- ============ ACCOUNT ============ -->
 <div id="acctPanel" class="overlay hidden">
   <div class="acctCard">
@@ -163,7 +296,7 @@
           <button id="loginBtn">Log in</button>
           <button id="registerBtn" class="primary">Create account</button>
         </div>
-        <p class="acctHint">An account keeps your name, stats, friends and outfits.</p>
+        <p class="acctHint">An account keeps your name, level, T-Bucks, items, friends and stats.</p>
       </div>
       <div id="authUser" class="hidden">
         <div class="acctName" id="acctName">Player</div>
@@ -173,13 +306,8 @@
           <div><b id="acKills">0</b><label>ELIMS</label></div>
           <div><b id="acBest">-</b><label>BEST</label></div>
         </div>
-        <div class="acctHint">Outfits unlock as you play. Your outfit shows in your next match.</div>
-        <div id="outfitRow" class="outfitRow"></div>
-        <div class="acctMsg" id="outfitMsg"></div>
         <div class="acctRow"><button id="logoutBtn">Log out</button></div>
       </div>
-      <div class="acctHint">Headwear: shows on your head in the lobby</div>
-      <div id="headRow" class="headRow"></div>
       <div class="acctMsg" id="authMsg"></div>
     </div>
     <div class="acctBody hidden" id="tab-friends">
@@ -250,6 +378,7 @@
 <script src="config.js"></script>
 <script src="/shared.js"></script>
 <script src="art.js"></script>
+<script src="settings.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

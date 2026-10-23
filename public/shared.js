@@ -344,6 +344,88 @@
     { id: 'gold',    name: 'Gold',    color: '#d9a92b', unlock: { stat: 'wins', min: 5 } },
   ];
 
+  // ---------- store, levels, battle pass (server + client) ----------
+  // Headwear for sale. The drawing lives in public/game.js (HEAD_ITEMS, by the same id).
+  S.HEAD_RARITY = {
+    common:    { name: 'Common',    color: '#9aa7b4', price: 150 },
+    rare:      { name: 'Rare',      color: '#3e8fbf', price: 300 },
+    epic:      { name: 'Epic',      color: '#7b4ea3', price: 500 },
+    legendary: { name: 'Legendary', color: '#d9a92b', price: 800 },
+  };
+  S.HEADS = [
+    { id: 'party',      name: 'Party hat',      rarity: 'common' },
+    { id: 'beanie',     name: 'Beanie',         rarity: 'common' },
+    { id: 'army',       name: 'Army helmet',    rarity: 'common' },
+    { id: 'ninja',      name: 'Ninja band',     rarity: 'common' },
+    { id: 'bandana',    name: 'Bandana',        rarity: 'common' },
+    { id: 'mohawk',     name: 'Mohawk',         rarity: 'common' },
+    { id: 'chef',       name: 'Chef hat',       rarity: 'common' },
+    { id: 'bucket',     name: 'Bucket hat',     rarity: 'common' },
+    { id: 'backcap',    name: 'Backwards cap',  rarity: 'common' },
+    { id: 'cowboy',     name: 'Cowboy hat',     rarity: 'rare' },
+    { id: 'tophat',     name: 'Top hat',        rarity: 'rare' },
+    { id: 'goggles',    name: 'Pilot goggles',  rarity: 'rare' },
+    { id: 'flowers',    name: 'Flower crown',   rarity: 'rare' },
+    { id: 'santa',      name: 'Santa hat',      rarity: 'rare' },
+    { id: 'headphones', name: 'Headphones',     rarity: 'rare' },
+    { id: 'catears',    name: 'Cat ears',       rarity: 'rare' },
+    { id: 'fedora',     name: 'Fedora',         rarity: 'rare' },
+    { id: 'miner',      name: 'Miner helmet',   rarity: 'rare' },
+    { id: 'crown',      name: 'Crown',          rarity: 'epic' },
+    { id: 'viking',     name: 'Viking helmet',  rarity: 'epic' },
+    { id: 'wizard',     name: 'Wizard hat',     rarity: 'epic' },
+    { id: 'horns',      name: 'Devil horns',    rarity: 'epic' },
+    { id: 'astronaut',  name: 'Space helmet',   rarity: 'epic' },
+    { id: 'halo',       name: 'Halo',           rarity: 'legendary' },
+    { id: 'tiara',      name: 'Tiara',          rarity: 'legendary' },
+  ];
+  S.headPrice = (id) => { const h = S.HEADS.find(x => x.id === id); return h ? S.HEAD_RARITY[h.rarity].price : 0; };
+  S.WELCOME_TBUCKS = 500;
+
+  // Store rotation: a daily seeded shuffle, so every player sees the same shop on the same day.
+  S.storeDay = (now) => Math.floor((now || Date.now()) / 86400000);
+  S.storeRotation = (day) => {
+    const ids = S.HEADS.map(h => h.id);
+    let seed = (day * 2654435761) >>> 0;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+    return { featured: ids.slice(0, 6), daily: ids.slice(6, 9) };
+  };
+
+  // Account level: 150 XP for level 2, then 10 more per level, up to level 100.
+  S.LEVEL_CAP = 100;
+  S.LEVEL_UP_TBUCKS = 25;
+  S.levelInfo = (xp) => {
+    let level = 1, left = Math.max(0, Math.floor(xp || 0));
+    while (level < S.LEVEL_CAP) {
+      const need = 150 + 10 * level;
+      if (left < need) return { level, into: left, need, pct: left / need };
+      left -= need; level++;
+    }
+    return { level: S.LEVEL_CAP, into: 0, need: 0, pct: 1 };
+  };
+
+  // Battle pass: 100 tiers, 200 XP each, in one season. Free track + premium track.
+  S.PASS = { tiers: 100, xpPerTier: 200, premiumCost: 950, tierCost: 60, season: 1, name: 'Season 1' };
+  S.passRewards = (tier) => {
+    const free = (tier % 5 === 0) ? { t: 'tbucks', n: 30 } : null;
+    let paid;
+    if (tier % 2 === 0 && tier / 2 <= S.HEADS.length) paid = { t: 'head', id: S.HEADS[tier / 2 - 1].id };
+    else paid = { t: 'tbucks', n: tier % 5 === 0 ? 75 : 25 };
+    if (tier === S.PASS.tiers) return { free: { t: 'tbucks', n: 200 }, paid: { t: 'tbucks', n: 500 } };
+    return { free, paid };
+  };
+  S.passTier = (xp) => Math.min(S.PASS.tiers, Math.floor((xp || 0) / S.PASS.xpPerTier));
+
+  // XP and T-Bucks for one finished match (place 1 means a win)
+  S.matchReward = (r) => {
+    const kills = Math.max(0, Math.floor(r.kills || 0));
+    const won = !!r.won, place = Math.max(0, Math.floor(r.place || 0));
+    const xp = 30 + 25 * kills + (won ? 150 : (place > 0 && place <= 5 ? 50 : 0));
+    const tbucks = 10 + 5 * kills + (won ? 40 : 0);
+    return { xp, tbucks };
+  };
+
   // export for node & browser
   if (typeof module !== 'undefined' && module.exports) module.exports = S;
   if (typeof window !== 'undefined') window.S = S;
