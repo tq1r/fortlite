@@ -469,13 +469,19 @@ function makePlayer(id, name, team, isBot) {
 // the last known spot.
 function botSkill() {
   const r = Math.random;
+  // skill tier: many bots are rough, most are normal, some are sharp (they win the fights they start)
+  const t = r();
+  const k = t < 0.25 ? 0.7 : t < 0.8 ? 1 : 1.35;
   return {
-    aimSpeed: 3.0 + r() * 3.0,    // rad/s: how fast it turns onto a target
-    jitter: 0.03 + r() * 0.08,    // aim wobble (radians) re-rolled each think
-    react: 0.25 + r() * 0.5,      // seconds before it fires at a newly seen enemy
-    lead: 0.5 + r() * 0.5,        // how much it leads a moving target
-    aggro: r(),                   // 0 cautious .. 1 aggressive
-    strafeHold: 0.8 + r() * 1.4,  // average seconds between strafe direction changes
+    k,
+    aimSpeed: (3.0 + r() * 3.0) * (0.85 + 0.15 * k),  // rad/s: how fast it turns onto a target
+    jitter: (0.03 + r() * 0.08) / k,                   // aim wobble (radians) re-rolled each think
+    react: (0.35 + r() * 0.5) / k,                     // seconds before it fires at a newly seen enemy
+    err: 9 / k,                                        // position estimate error in px per 100 px of distance
+    lead: 0.5 + r() * 0.5,                             // how much it leads a moving target
+    aggro: r(),                                        // 0 cautious .. 1 aggressive
+    strafeHold: 0.8 + r() * 1.4,                       // average seconds between strafe direction changes
+    build: (0.4 + r() * 0.6) * k,                      // how often it throws up cover in a fight
   };
 }
 function newBotAI() {
@@ -973,6 +979,7 @@ function tryFire(p) {
   p.fireCd = w.rof;
   p.useT = 0;
   p.lastShotT = G.matchTime;
+  G.lastSound = { x: p.x, y: p.y, t: G.matchTime };   // gunfire: bots nearby can hear where it came from
   const mult = S.RARITY[s.r].mult;
   const mx = p.x + Math.cos(p.input.aim) * 30, my = p.y + Math.sin(p.input.aim) * 30;
   ev({ k: 'shot', x: mx, y: my, a: p.input.aim, w: s.w, id: p.id });
@@ -1254,12 +1261,13 @@ function botWantsItem(p, item) {
 }
 
 // what a bot can see: nearest living enemy with a clear line and not hidden in a bush
+const BOT_SIGHT = 560;   // px: a bot cannot see across the whole map
 function botSenses(p) {
   let best = null, bd = 1e9;
   for (const q of G.players) {
     if (!q.alive || q === p || effTeam(q) === effTeam(p)) continue;
     const d = S.dist(p.x, p.y, q.x, q.y);
-    if (d > 700 || d >= bd) continue;
+    if (d > BOT_SIGHT || d >= bd) continue;
     const shotRecently = (G.matchTime - q.lastShotT) < 1.5;
     if (d > 130 && !shotRecently && G.obstacles.some(o => o.type === 'bush' && S.dist2(q.x, q.y, o.x, o.y) < 40 * 40)) continue;
     if (!S.clearSeg(p.x, p.y, q.x, q.y, world)) continue;
@@ -1318,15 +1326,35 @@ function botThink(p, dt) {
   let seen = botSenses(p);
   const looting = G.matchTime - (p.landT || 0) < BOT_LOOT_GRACE;
   if (seen && G.matchTime - ai.hitT > 2 && (looting || (!armedNow && S.dist(p.x, p.y, seen.x, seen.y) > 160))) seen = null;
+  // what the bot believes about the enemy: the position is a guess that gets rougher with distance,
+  // and the velocity is measured from the last few sightings (it is not read from the enemy)
+  let est = null;
+  if (seen) {
+    const dd = S.dist(p.x, p.y, seen.x, seen.y);
+    const e = sk.err * dd / 100;
+    est = { x: seen.x + (Math.random() - 0.5) * 2 * e, y: seen.y + (Math.random() - 0.5) * 2 * e, vx: 0, vy: 0 };
+    const lo = ai.lastObs;
+    if (lo && lo.id === seen.id && G.matchTime - lo.t < 1 && G.matchTime > lo.t) {
+      const dt2 = G.matchTime - lo.t;
+      est.vx = lo.vx * 0.6 + ((seen.x - lo.x) / dt2) * 0.4;
+      est.vy = lo.vy * 0.6 + ((seen.y - lo.y) / dt2) * 0.4;
+    }
+    ai.lastObs = { id: seen.id, x: seen.x, y: seen.y, t: G.matchTime, vx: est.vx, vy: est.vy };
+  }
   if (seen) {
     if (ai.target !== seen) { ai.target = seen; ai.reactT = sk.react * (0.7 + Math.random() * 0.6); }
-    ai.mem = { x: seen.x, y: seen.y, vx: seen.vx || 0, vy: seen.vy || 0, t: G.matchTime };
+    ai.mem = { x: est.x, y: est.y, vx: est.vx, vy: est.vy, t: G.matchTime };
   } else {
     ai.target = null;
     // shot from somewhere it cannot see: turn toward the shooter
     if (ai.hitBy && ai.hitBy.alive && G.matchTime - ai.hitT < 1.2 && (!ai.mem || ai.mem.t < ai.hitT)) {
       ai.mem = { x: ai.hitBy.x, y: ai.hitBy.y, vx: 0, vy: 0, t: ai.hitT };
     }
+  }
+  // hearing: gunfire close by pulls the bot toward it (it goes to search there), unless it is busy looting
+  const snd = G.lastSound;
+  if (!seen && !looting && snd && G.matchTime - snd.t < 4 && S.dist(p.x, p.y, snd.x, snd.y) < 450 && Math.random() < 0.35) {
+    ai.mem = { x: snd.x + (Math.random() - 0.5) * 120, y: snd.y + (Math.random() - 0.5) * 120, vx: 0, vy: 0, t: G.matchTime };
   }
   const quietFor = ai.mem ? G.matchTime - ai.mem.t : 99;
 
@@ -1371,25 +1399,41 @@ function botThink(p, dt) {
     const weapon = s && s.kind === 'weapon' ? S.WEAPONS[s.w] : null;
     const td = S.dist(p.x, p.y, seen.x, seen.y);
 
-    // aim where the target will be when the bullet arrives
-    let px = seen.x, py = seen.y;
+    // hurt and well outside the enemy's reach: heal now instead of waiting for a quiet moment
+    if (p.hp < 35 && td > 260 && p.useT <= 0) {
+      let hi = -1;
+      for (let i = 1; i < 5; i++) {
+        const cs2 = p.slots[i];
+        if (!cs2 || cs2.kind !== 'consum') continue;
+        if (S.CONSUM[cs2.c].heal) { hi = i; break; }
+      }
+      if (hi >= 0) { p.sel = hi; startUse(p); }
+    }
+    const healing = p.useT > 0;   // a heal is in progress: do not shoot (shooting cancels it)
+
+    // aim where the bot thinks the target will be when the bullet arrives
+    let px = est.x, py = est.y;
     if (weapon) {
       const tt = Math.min(1.2, td / weapon.speed) * sk.lead;
-      px += (seen.vx || 0) * tt; py += (seen.vy || 0) * tt;
+      px += est.vx * tt; py += est.vy * tt;
     }
     const aimTrue = Math.atan2(py - p.y, px - p.x);
-    ai.desAim = aimTrue + (Math.random() - 0.5) * 2 * sk.jitter;
+    ai.desAim = aimTrue + (Math.random() - 0.5) * 2 * sk.jitter * (0.5 + td / 400);
     const tol = weapon ? ({ sniper: 0.05, ar: 0.12, pistol: 0.14, smg: 0.18, shotgun: 0.22 }[weapon.id] || 0.15) : 0.5;
     ai.fireTol = tol;
 
-    // panic: low and close to a fight, drop a wall for cover
-    if (p.hp < 40 && ai.panicWallT <= 0 && p.mats[p.buildMat] >= S.WALL_COST) {
+    // cover: low and close, or pinned at mid range, throw up a wall in front of the enemy
+    if (p.hp < 60 && ai.panicWallT <= 0 && p.mats[p.buildMat] >= S.WALL_COST) {
       p.input.aim = aimTrue;
       ai.panicWallT = 3;
       tryPlaceWall(p);
+    } else if (td > 160 && td < 420 && ai.panicWallT <= 0 && p.mats[p.buildMat] >= S.WALL_COST && Math.random() < 0.25 * sk.build) {
+      p.input.aim = aimTrue;
+      ai.panicWallT = 4;
+      tryPlaceWall(p);
     }
 
-    const aimAng = Math.atan2(seen.y - p.y, seen.x - p.x);
+    const aimAng = Math.atan2(est.y - p.y, est.x - p.x);
     if (ai.strafeT <= 0) {
       ai.strafeDir = Math.random() < 0.5 ? 1 : -1;
       ai.strafeT = sk.strafeHold * (0.6 + Math.random() * 0.8);
@@ -1404,7 +1448,7 @@ function botThink(p, dt) {
     if (!weapon) {
       // no gun: rush and swing
       inp.mx = Math.cos(aimAng); inp.my = Math.sin(aimAng);
-      ai.wantFire = td < 60;
+      ai.wantFire = !healing && td < 60;
       ai.fireTol = 0.5;
     } else {
       const prefRange = { pistol: 260, smg: 220, shotgun: 120, ar: 340, sniper: 480 }[weapon.id] || 260;
@@ -1417,7 +1461,7 @@ function botThink(p, dt) {
       my -= Math.sin(aimAng) * (pull + retreat);
       const mag = Math.hypot(mx, my) || 1;
       inp.mx = mx / mag; inp.my = my / mag;
-      ai.wantFire = p.reloadT <= 0 && td < weapon.range * 0.9;
+      ai.wantFire = !healing && p.reloadT <= 0 && td < weapon.range * 0.9;
     }
   } else if (danger || (st && distToSafe > st.tr * 0.85 && (st.sh || st.t < 30))) {
     // ---------- storm first: head for the next circle at full speed, no looting on the way
@@ -1500,18 +1544,12 @@ function botThink(p, dt) {
   }
 
   // no weapon after a while: find one (keeps bots threatening)
-  if (G.matchTime > 25 && !p.slots.some(s => s && s.kind === 'weapon')) {
+  if (G.matchTime > 40 && !p.slots.some(s => s && s.kind === 'weapon')) {
     const wi = Math.floor(Math.random() * 3); // pistol/smg/shotgun
     const empty = p.slots.indexOf(null, 1);
     const idx = empty !== -1 ? empty : 1;
     p.slots[idx] = { kind: 'weapon', w: wi, r: Math.floor(Math.random() * 2), mag: S.WEAPONS[wi].mag };
-    p.ammo[S.WEAPONS[wi].ammo] += 60;
-  }
-  // gentle ammo trickle so bots don't run dry
-  const cs = curSlot(p);
-  if (cs && cs.kind === 'weapon') {
-    const at = S.WEAPONS[cs.w].ammo;
-    if (p.ammo[at] < 10) p.ammo[at] += 1;
+    p.ammo[S.WEAPONS[wi].ammo] += 30;
   }
   if (p.stuckT > 0.6) { const t = inp.mx; inp.mx = -inp.my; inp.my = t; p.stuckT = 0.2; }
   const mv = Math.hypot(inp.mx, inp.my);
