@@ -97,7 +97,6 @@ function genMap(seed) {
   G.chests = []; G.loot = new Map(); G.floors = []; G.bullets = []; G.roads = [];
   const W = S.WORLD;
   const AREA = (W / 4200) ** 2;   // density reference: the old 4200 map
-  const LOOT_SCALE = AREA * 1.5;  // more loot per area: 100 players
 
   // ---- spatial index for placement checks (obstacles only exist here while generating)
   const CELL = 200, MAX_R = 130;
@@ -366,7 +365,7 @@ function genMap(seed) {
   scatterByBiome('bush', Math.round(40 * AREA), 28, 32, 999, null, BUSH_P, (x, y) => 0.2 + 0.8 * clusterW(bushSeeds, x, y), 300000);
 
   // open-field chests and crates
-  for (let i = 0; i < Math.round(16 * AREA * 0.9); i++) {
+  for (let i = 0; i < Math.round(5 * AREA); i++) {   // few open-field chests: gear is found by searching
     for (let tries = 0; tries < 300; tries++) {
       const x = 160 + rand() * (W - 320), y = 160 + rand() * (W - 320);
       if (okSpot(x, y, 34, 60)) { G.chests.push({ id: nextEntityId++, x, y, open: false }); break; }
@@ -377,7 +376,7 @@ function genMap(seed) {
   // floor loot
   const roll = (arr) => { let t = 0; for (const a of arr) t += a[1]; let r = rand() * t; for (const a of arr) { r -= a[1]; if (r <= 0) return a[0]; } return arr[0][0]; };
   const floorRarity = () => roll([[0, 50], [1, 30], [2, 15], [3, 5]]);
-  const nFloor = Math.round(85 * LOOT_SCALE);
+  const nFloor = Math.round(18 * AREA);   // loose gear on the ground is scarce: most gear comes from chests, POIs and kills
   for (let i = 0; i < nFloor; i++) {
     let tries = 0;
     while (tries++ < 300) {
