@@ -188,6 +188,7 @@ try {
     players: [
       { id: 7, name: 'SmokeTester', team: 2, bot: false },
       { id: 8, name: 'BotRay', team: 0, bot: true },
+      { id: 9, name: 'Frostspire Castle Boss', team: 0, bot: true },
     ],
     you: 7,
   });
@@ -219,6 +220,25 @@ try {
   deliver({ t: 'ev', k: 'revive', vid: 7, vname: 'SmokeTester', rid: 8, rname: 'Mate', vteam: 2, kteam: 2, x: 600, y: 600 });
   frames(5);
   ok(true, 'knock and revive render without errors');
+
+  // bosses (red skin, horns, cape), a medallion holder on the map, armor and medallion on the ground and in the hotbar
+  deliver({
+    t: 'snap', tm: 4, alive: 2,
+    p: [[7, 600, 600, 0.5, 100, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [8, 700, 700, 1.2, 80, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [9, 900, 900, 0.3, 600, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]],
+    st: null,
+  });
+  deliver({
+    t: 'you', hp: 100, sh: 0, armor: 'heavy',
+    mats: { wood: 0, stone: 0, metal: 0 }, ammo: { light: 0, medium: 0, heavy: 0, shell: 0 },
+    slots: [{ k: 'pick' }, { k: 'm' }, { k: 'c', c: 'medkit', n: 2 }, null, null],
+    sel: 0, reload: 0, use: 0, build: false, bmat: 'wood', alive: true, kills: 0, place: 0,
+  });
+  deliver({ t: 'ev', k: 'lootAdd', l: { i: 61, x: 1000, y: 1000, k: 'armor', t: 'heavy' } });
+  deliver({ t: 'ev', k: 'lootAdd', l: { i: 62, x: 1040, y: 1000, k: 'medal' } });
+  frames(12);
+  ok(true, 'boss, medallion holder, armor and medallion render without errors');
 
   // events galore
   const evs = [

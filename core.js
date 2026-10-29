@@ -10,6 +10,7 @@ function createGame(opts = {}) {
 const FAST = !!opts.fast;
 const NO_STORM = !!opts.nostorm;
 const NO_BUS = !!opts.nobus;   // debug: drop everyone straight onto the map
+const NO_BOSS = !!opts.noboss; // debug: no POI bosses
 const BOT_FILL = (typeof opts.bots === 'number') ? opts.bots : S.BOT_FILL;
 const MODE = opts.mode === 'duo' ? 'duo' : 'solo';   // this room's mode: duo rooms hold parties of two only
 const onMatchEnd = typeof opts.onMatchEnd === 'function' ? opts.onMatchEnd : null;   // reports human results (accounts)
@@ -362,7 +363,7 @@ function clampOutfit(v) {
 function makePlayer(id, name, team, isBot) {
   return {
     id, name, team, bot: isBot, outfit: 0, head: 0,
-    client: null,
+    client: null, armor: null, boss: null,
     x: 0, y: 0, aim: 0,
     input: { mx: 0, my: 0, aim: 0, fire: false, build: false },
     pending: [],
@@ -477,7 +478,7 @@ function startMsg(forClient) {
   };
 }
 function serializeLoot(l) {
-  return { i: l.id, x: Math.round(l.x), y: Math.round(l.y), k: l.kind, w: l.w, r: l.r, c: l.c, n: l.count, m: l.m, a: l.amount, at: l.at, am: l.ammo };
+  return { i: l.id, x: Math.round(l.x), y: Math.round(l.y), k: l.kind, w: l.w, r: l.r, c: l.c, n: l.count, m: l.m, a: l.amount, at: l.at, am: l.ammo, t: l.tier };
 }
 
 // ============================================================
@@ -632,6 +633,71 @@ function botAir(p, dt) {
 // ============================================================
 function effTeam(p) { return p.team > 0 ? p.team : -(p.id); }
 
+// ---- bosses: one per POI. Red skin, heavy armor, a rifle. A boss only fights what comes within its
+// sight, keeps a range, strafes, and never strays far from its POI. It does not loot or ride the bus.
+function freeSpotNear(x, y, r) {
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * Math.PI * 2, d = Math.random() * r;
+    const nx = x + Math.cos(a) * d, ny = y + Math.sin(a) * d;
+    if (S.resolveCircle(nx, ny, S.PLAYER_R + 2, world)[0] === nx) return [nx, ny];
+  }
+  return [x, y];
+}
+function spawnBosses() {
+  for (const poi of G.pois) {
+    const p = makePlayer(nextEntityId++, poi.n + ' Boss', 0, true);
+    const wi = S.WIDX[S.BOSS.weapon];
+    p.hp = S.BOSS.hp; p.shield = 0;
+    p.armor = S.BOSS.armor;
+    p.slots[1] = { kind: 'weapon', w: wi, r: S.BOSS.rarity, mag: S.WEAPONS[wi].mag };
+    p.sel = 1;   // hold the rifle, not the pickaxe
+    [p.x, p.y] = freeSpotNear(poi.x, poi.y, 60);
+    p.ph = S.PH.ground;
+    p.boss = { cx: poi.x, cy: poi.y, tgt: null, thinkT: 0, burstT: 0.7, pauseT: 0, strafe: 1, strafeT: 0, idleA: Math.random() * 6.28 };
+    G.players.push(p);
+  }
+}
+function bossThink(p, dt) {
+  const b = p.boss, inp = p.input;
+  inp.fire = false; inp.build = false; inp.r = false; inp.mx = 0; inp.my = 0;
+  const s = p.slots[1];
+  if (s && s.kind === 'weapon') s.mag = S.WEAPONS[s.w].mag;   // a boss never runs dry
+  if (G.state !== 'active' || p.kn) return;
+  b.thinkT -= dt; b.strafeT -= dt;
+  if (b.thinkT <= 0) {
+    b.thinkT = 0.2;
+    let best = null, bd = S.BOSS.sight;
+    for (const q of G.players) {
+      if (q === p || !q.alive || q.boss || q.kn || q.ph !== S.PH.ground) continue;
+      const d = S.dist(p.x, p.y, q.x, q.y);
+      if (d < bd && S.dist(q.x, q.y, b.cx, b.cy) < S.BOSS.leash + 80) { bd = d; best = q; }
+    }
+    b.tgt = best;
+  }
+  if (b.strafeT <= 0) { b.strafeT = 1.2 + Math.random() * 1.2; b.strafe = Math.random() < 0.5 ? -1 : 1; }
+  const t = b.tgt && b.tgt.alive && !b.tgt.kn ? b.tgt : null;
+  if (t) {
+    const dx = t.x - p.x, dy = t.y - p.y, d = Math.hypot(dx, dy) || 1;
+    inp.aim = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.06;
+    // hold a range: close in when far, back off when near, strafe in between
+    const rad = d > 320 ? 1 : d < 220 ? -1 : 0;
+    inp.mx = (dx / d) * rad - (dy / d) * 0.7 * b.strafe;
+    inp.my = (dy / d) * rad + (dx / d) * 0.7 * b.strafe;
+  } else {
+    // nothing in sight: stay near the POI and look around
+    b.idleA += dt * 0.7;
+    inp.aim = b.idleA;
+    const dx = b.cx - p.x, dy = b.cy - p.y, d = Math.hypot(dx, dy);
+    if (d > 70) { inp.mx = dx / d; inp.my = dy / d; }
+  }
+  // leash: pull back toward the POI when it has drifted out
+  const off = S.dist(p.x, p.y, b.cx, b.cy);
+  if (off > S.BOSS.leash) { inp.mx += (b.cx - p.x) / off * 1.2; inp.my += (b.cy - p.y) / off * 1.2; }
+  // burst fire with short pauses, like a player tapping the trigger
+  if (b.pauseT > 0) { b.pauseT -= dt; inp.fire = false; if (b.pauseT <= 0) b.burstT = 0.7 + Math.random() * 0.5; }
+  else if (t) { inp.fire = true; b.burstT -= dt; if (b.burstT <= 0) b.pauseT = 0.8 + Math.random() * 0.5; }
+}
+
 function startMatch() {
   genMap((Math.random() * 1e9) | 0);
   G.players = [];
@@ -694,6 +760,7 @@ function startMatch() {
     makeBus();
     for (const p of G.players) { p.ph = S.PH.bus; p.alt = 0; followBus(p); }
   }
+  if (!NO_BOSS) spawnBosses();
   G.storm = {
     phase: -1, t: STORM_GRACE,
     cx: S.WORLD / 2, cy: S.WORLD / 2, r: STORM_CFG.startR,
@@ -701,11 +768,11 @@ function startMatch() {
     tx: S.WORLD / 2, ty: S.WORLD / 2, tr: STORM_CFG.startR,       // shrink-to
     shrinking: false, dps: 0,
   };
-  G.aliveCount = G.players.length;
+  G.aliveCount = G.players.filter(p => !p.boss).length;   // bosses are not players for the round count
   G.state = NO_BUS ? 'active' : 'bus';
   reportLobby();   // a started match is no longer open for joins
   if (!NO_BUS) ev({ k: 'busStart' });
-  log(`Match started [${G.mode}]: ${G.players.length} players (${clients.size} human)${NO_STORM ? ' [no storm]' : ''}${NO_BUS ? ' [no bus]' : ''}`);
+  log(`Match started [${G.mode}]: ${G.players.filter(p => !p.boss).length} players (${clients.size} human)${NO_BOSS ? ' [no bosses]' : ''}${NO_STORM ? ' [no storm]' : ''}${NO_BUS ? ' [no bus]' : ''}`);
   for (const c of clients.values()) sendTo(c, startMsg(c.player ? c : null));
   broadcastLobby();
 }
@@ -714,7 +781,7 @@ function endMatch(winnerTeam) {
   if (G.state !== 'active') return;
   G.state = 'end';
   G.endTimer = END_TIME;
-  const winners = G.players.filter(p => p.alive);
+  const winners = G.players.filter(p => p.alive && !p.boss);
   if (onMatchEnd) {
     const rows = [];
     for (const c of clients.values()) {
@@ -731,7 +798,7 @@ function endMatch(winnerTeam) {
   }
   const board = G.players
     .map(p => {
-      if (p.alive && !p.placement) p.placement = 1;
+      if (p.alive && !p.boss && !p.placement) p.placement = 1;
       return { name: p.name, team: p.team, kills: p.kills, place: p.placement || 99, bot: p.bot };
     })
     .sort((a, b) => (a.place - b.place) || (b.kills - a.kills))
@@ -766,7 +833,7 @@ function damagePlayer(victim, amount, attacker, cause) {
     killPlayer(victim, attacker, cause);
     return;
   }
-  let dmg = amount;
+  let dmg = victim.armor ? amount * (1 - S.ARMOR[victim.armor].red) : amount;
   if (victim.shield > 0) {
     const absorbed = Math.min(victim.shield, dmg);
     victim.shield -= absorbed; dmg -= absorbed;
@@ -831,8 +898,7 @@ function killPlayer(victim, attacker, cause) {
   victim.alive = false;
   victim.kn = false;
   victim.hp = 0;
-  victim.placement = G.aliveCount;
-  G.aliveCount--;
+  if (!victim.boss) { victim.placement = G.aliveCount; G.aliveCount--; }
   // drop loot
   const dropAt = (def) => {
     const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 45;
@@ -844,11 +910,14 @@ function killPlayer(victim, attacker, cause) {
     if (!s) continue;
     if (s.kind === 'weapon') dropAt({ kind: 'weapon', w: s.w, r: s.r, ammo: 0 });
     else if (s.kind === 'consum') dropAt({ kind: 'consum', c: s.c, count: s.count });
+    else if (s.kind === 'medal') dropAt({ kind: 'medal' });
   }
   for (const m of S.MATS) if (victim.mats[m] >= 20) dropAt({ kind: 'mats', m, amount: Math.min(100, Math.floor(victim.mats[m] / 2)) });
   const ammoDrop = (at, n) => { if (n >= 4) dropAt({ kind: 'ammo', at, count: Math.min(n, 20) }); };
   ammoDrop('light', victim.ammo.light); ammoDrop('medium', victim.ammo.medium);
   ammoDrop('heavy', victim.ammo.heavy); ammoDrop('shell', victim.ammo.shell);
+  if (victim.armor) dropAt({ kind: 'armor', tier: victim.armor });
+  if (victim.boss && Math.random() < S.BOSS.medalChance) dropAt({ kind: 'medal' });
 
   if (attacker && attacker !== victim) attacker.kills++;
   const kname = attacker ? attacker.name : (cause === 'left' ? 'Disconnected' : 'The Fade');
@@ -861,7 +930,7 @@ function killPlayer(victim, attacker, cause) {
   if (victim.team > 0) for (const q of G.players) if (q.alive && q.kn && q.team === victim.team) killPlayer(q, attacker || victim.knBy, 'bleed');
   // win check
   const teams = new Set();
-  for (const p of G.players) if (p.alive) teams.add(effTeam(p));
+  for (const p of G.players) if (p.alive && !p.boss) teams.add(effTeam(p));
   if (teams.size <= 1) {
     const only = teams.size === 1 ? [...teams][0] : null;
     endMatch(only);
@@ -1054,6 +1123,20 @@ function tryPickup(p, item, explicit) {
     p.slots[empty] = { kind: 'consum', c: def.c, count: def.count };
     return true;
   }
+  if (def.kind === 'armor') {
+    // one armor slot: a piece is only kept if it ranks above the one already worn
+    const cur = p.armor ? S.ARMOR[p.armor].rank : 0;
+    if (S.ARMOR[def.tier].rank <= cur) return false;
+    p.armor = def.tier;
+    return true;
+  }
+  if (def.kind === 'medal') {
+    if (p.slots.some(s => s && s.kind === 'medal')) return false;
+    const slot = p.slots.indexOf(null, 1);
+    if (slot === -1) return false;
+    p.slots[slot] = { kind: 'medal' };
+    return true;
+  }
   if (def.kind === 'weapon') {
     const empty = p.slots.indexOf(null, 1);
     if (empty === -1) {
@@ -1082,6 +1165,9 @@ function removeLoot(item) {
 }
 
 function autoPickup(p) {
+  if (p.boss) return;   // bosses hold their POI and never loot
+  // humans pick up by hand (E) unless they turned auto pick on in Settings; bots always auto pick
+  if (!p.bot && !(p.client && p.client.autoPick)) return;
   for (const item of G.loot.values()) {
     if (S.dist2(p.x, p.y, item.x, item.y) > 38 * 38) continue;
     if (item.kind === 'weapon' && p.slots.indexOf(null, 1) === -1) continue; // need E to swap
@@ -1146,7 +1232,8 @@ function dropSelected(p) {
   const s = curSlot(p);
   if (!s || p.sel === 0) return;
   const def = s.kind === 'weapon' ? { kind: 'weapon', w: s.w, r: s.r, ammo: 0 }
-    : s.kind === 'consum' ? { kind: 'consum', c: s.c, count: s.count } : null;
+    : s.kind === 'consum' ? { kind: 'consum', c: s.c, count: s.count }
+    : s.kind === 'medal' ? { kind: 'medal' } : null;
   if (!def) return;
   p.slots[p.sel] = null;
   p.useT = 0;
@@ -1179,7 +1266,7 @@ function finishUse(p) {
 // ============================================================
 function botWantsItem(p, item) {
   if (item.kind === 'ammo' || item.kind === 'mats') return true;
-  if (item.kind === 'consum') return true;
+  if (item.kind === 'consum' || item.kind === 'armor' || item.kind === 'medal') return true;
   if (item.kind !== 'weapon') return false;
   const score = (w, r) => [2, 3, 3, 4, 3.5][w] * (1 + r * 0.3);
   const myBest = Math.max(1,
@@ -1692,6 +1779,7 @@ function buildSnapshot() {
   const ps = [];
   for (const p of G.players) {
     if (!p.alive) continue;
+    if (p.boss && G.state !== 'active') continue;   // bosses wait for the bus to land
     const s = curSlot(p);
     let wv = -1;
     if (p.input.build) wv = 6;
@@ -1704,7 +1792,7 @@ function buildSnapshot() {
       p.team, wv, (Math.abs(p.input.mx) + Math.abs(p.input.my)) > 0.1 ? 1 : 0,
       p.useT > 0 ? 1 : 0, p.kills, p.ph, Math.round(p.alt * 100), p.outfit,
       p.kn ? 1 : 0, p.kn ? Math.ceil(p.knT) : 0, Math.round(Math.min(1, p.revT / S.KNOCK.revive) * 100),
-      p.head || 0,
+      p.head || 0, p.boss ? 1 : 0, p.slots.some(s => s && s.kind === 'medal') ? 1 : 0,
     ]);
   }
   const st = G.storm;
@@ -1744,7 +1832,8 @@ function tick() {
       if (G.state === 'active') updateStorm(dt);
       for (const p of G.players) {
         if (!p.alive) continue;
-        if (p.bot) { if (p.ph === S.PH.ground) botThink(p, dt); else botAir(p, dt); }
+        if (p.boss) { if (p.ph === S.PH.ground) bossThink(p, dt); }
+        else if (p.bot) { if (p.ph === S.PH.ground) botThink(p, dt); else botAir(p, dt); }
         processPlayer(p, dt);
       }
       if (G.state === 'bus') {
@@ -1760,13 +1849,13 @@ function tick() {
         // everyone gone?
         const humans = [...clients.values()].filter(c => c.player);
         if (humans.length === 0 && G.matchTime > 3) {
-          const t = new Set(); for (const p of G.players) if (p.alive) t.add(effTeam(p));
+          const t = new Set(); for (const p of G.players) if (p.alive && !p.boss) t.add(effTeam(p));
           endMatch(t.size ? [...t][0] : null);
         } else if (G.matchTime > 3 && G.players.some(p => !p.bot) && !G.players.some(p => !p.bot && p.alive)) {
           // every human is out: the round is over even if bots are still standing
           endMatch(null);
         } else if (G.aliveCount <= 1 || G.matchTime > ROUND_LIMIT) {
-          const t = new Set(); for (const p of G.players) if (p.alive) t.add(effTeam(p));
+          const t = new Set(); for (const p of G.players) if (p.alive && !p.boss) t.add(effTeam(p));
           endMatch(t.size ? [...t][0] : null);
         }
       }
@@ -1795,12 +1884,13 @@ function tick() {
             if (!sl) return null;
             if (sl.kind === 'pickaxe') return { k: 'pick' };
             if (sl.kind === 'weapon') return { k: 'w', w: sl.w, r: sl.r, mag: sl.mag };
+            if (sl.kind === 'medal') return { k: 'm' };
             return { k: 'c', c: sl.c, n: sl.count };
           });
           sendTo(c, {
             t: 'you',
             hp: Math.round(p.hp), sh: Math.round(p.shield),
-            mats: p.mats, ammo: p.ammo, slots: slotData, sel: p.sel,
+            mats: p.mats, ammo: p.ammo, slots: slotData, sel: p.sel, armor: p.armor || null,
             reload: p.reloadT > 0 ? p.reloadT / p.reloadTotal : 0,
             use: p.useT > 0 ? 1 - p.useT / p.useTotal : 0,
             build: p.input.build, bmat: p.buildMat,
@@ -1899,6 +1989,10 @@ function acceptSocket(conn, account) {
         i.r = !!msg.r;   // holding E: revive a knocked teammate if one is in reach
         break;
       }
+      case 'set': {
+        client.autoPick = !!msg.autoPick;
+        break;
+      }
       case 'act': {
         const p = client.player;
         if (!p || !p.alive || !msg.a) return;
@@ -1915,7 +2009,7 @@ function acceptSocket(conn, account) {
 let timers = [];
 function start() {
   if (timers.length) return;
-  timers.push(setInterval(keepalive, 30000));
+  timers.push(setInterval(keepalive, 15000));
   timers.push(setInterval(tick, TICK_MS));
 }
 function stop() {
@@ -1925,12 +2019,14 @@ function stop() {
 function keepalive() {
   for (const c of clients.values()) {
     if (!c.ws || c.ws.closed) continue;
+    // an application-level ping: the client answers with 'pong', which keeps the connection busy
+    sendTo(c, { t: 'ping' });
     c.ws.ping();
     if (c.ws.slow && c.ws.slow()) c.ws._close(); // very slow client
   }
 }
 
-return { acceptSocket, start, stop, clientCount: () => clients.size, stateName: () => G.state };
+return { acceptSocket, start, stop, clientCount: () => clients.size, stateName: () => G.state, ...(opts.debug ? { __internal: { G, S, makePlayer, damagePlayer, killPlayer, tryPickup, startMatch, tick, buildSnapshot, spawnBosses } } : {}) };
 }
 
 module.exports = { createGame };

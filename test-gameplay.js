@@ -148,7 +148,7 @@ async function moveToward(c, id, tx, ty, rad, timeoutMs = 25000) {
 
 async function main() {
   console.log(`Gameplay test on :${PORT} (no bots, no storm)...`);
-  const server = spawn('node', ['server.js', '--port', PORT, '--bots', 0, '--nostorm', '--nobus', '--fast', '--dev-party'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn('node', ['server.js', '--port', PORT, '--bots', 0, '--nostorm', '--nobus', '--nobosses', '--fast', '--dev-party'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
   const kill = () => { try { server.kill('SIGKILL'); } catch (_) {} };
   process.on('exit', kill);
   server.stdout.on('data', d => process.stdout.write('  [srv] ' + d));
@@ -251,7 +251,13 @@ async function main() {
   }
   console.log(`  … walking to ${S.WEAPONS[wLoot.w].name} @${wLoot.x},${wLoot.y} (${Math.round(bdW)}px)`);
   await moveToward(A, wa.id, wLoot.x, wLoot.y, 20);
-  await sleep(300);
+  // auto pick up is off by default, so press E (interact) on the gun to take it
+  for (let tryN = 0; tryN < 3; tryN++) {
+    A.send({ t: 'act', a: 'interact' });
+    await sleep(400);
+    if (A.last(m => m.t === 'you' && m.slots && m.slots.some(s => s && s.k === 'w'))) break;
+    await moveToward(A, wa.id, wLoot.x, wLoot.y, 20, 8000);
+  }
   const youW = await A.wait(m => m.t === 'you' && m.slots.some(s => s && s.k === 'w'), 5000);
   const wslot = youW.slots.find(s => s && s.k === 'w');
   ok(!!wslot, `picked up ${S.WEAPONS[wslot.w].name} (rarity ${wslot.r}, mag ${wslot.mag})`);

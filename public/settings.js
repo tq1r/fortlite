@@ -11,6 +11,7 @@ const FL_SET_DEFAULTS = {
   uiContrast: 100,          // 80..140 (percent)
   sfxVolume: 100,           // 0..100
   showFps: false,
+  autoPick: false,          // pick up loot as you walk over it (off: press E)
 };
 function loadSettings() {
   try { return { ...FL_SET_DEFAULTS, ...JSON.parse(localStorage.getItem('fl_settings') || '{}') }; }
@@ -20,6 +21,7 @@ let FL_SET = loadSettings();
 function saveSettings() { localStorage.setItem('fl_settings', JSON.stringify(FL_SET)); }
 // Pushes the current settings into the page: brightness and contrast are CSS, the rest is read by game.js.
 function applySettings() {
+  if (typeof send === 'function') send({ t: 'set', autoPick: !!FL_SET.autoPick });
   const root = document.documentElement.style;
   root.setProperty('--bright', String(FL_SET.brightness / 100));
   root.setProperty('--uic', String(FL_SET.uiContrast / 100));

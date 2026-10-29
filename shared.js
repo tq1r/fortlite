@@ -91,6 +91,15 @@
   // chest tiers, decided when the match is generated (before anyone can see or open them).
   // Chests on the layout's 'L' spots are always legendary. Every other chest rolls these odds.
   S.CHEST_ODDS = { blue: 0.20, legendary: 0.05 };
+  // armor: one equip slot that cuts incoming damage; rank decides which piece is kept
+  S.ARMOR = {
+    light: { name: 'Light Armor', red: 0.20, rank: 1, color: '#5fb3ff' },
+    heavy: { name: 'Heavy Armor', red: 0.35, rank: 2, color: '#b58cff' },
+  };
+  // medallion: a held item; whoever holds one shows on every map
+  S.MEDAL = { name: 'Medallion', color: '#ffd23a' };
+  // one boss per POI: red skin, heavy armor, a rifle; it holds its POI within the leash
+  S.BOSS = { hp: 600, weapon: 'ar', rarity: 3, armor: 'heavy', sight: 430, leash: 380, medalChance: 0.35 };
 
   // ammo granted when the weapon is picked up
   S.WEAPON_PICKUP_AMMO = { light: 30, medium: 30, heavy: 6, shell: 8 };

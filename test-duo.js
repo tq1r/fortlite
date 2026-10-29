@@ -91,7 +91,7 @@ const ok = (c, msg) => { if (c) { pass++; console.log('  PASS ' + msg); } else {
 async function main() {
   const port = 3700 + Math.floor(Math.random() * 300);
   console.log(`Duo rules test on :${port} (fast, dev parties)...`);
-  const srv = spawn('node', ['server.js', '--port', String(port), '--fast', '--dev-party'], { cwd: path.join(__dirname), stdio: ['ignore', 'pipe', 'pipe'] });
+  const srv = spawn('node', ['server.js', '--port', String(port), '--fast', '--dev-party', '--nobosses'], { cwd: path.join(__dirname), stdio: ['ignore', 'pipe', 'pipe'] });
   srv.stdout.on('data', () => {}); srv.stderr.on('data', () => {});
   const base = `ws://127.0.0.1:${port}/ws`;
   const clients = [];

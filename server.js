@@ -31,14 +31,15 @@ const PORT = process.env.PORT || FLAG('port', 3000);
 const FAST = !!FLAG('fast', false);
 const NO_STORM = !!FLAG('nostorm', false);
 const NO_BUS = !!FLAG('nobus', false);
+const NO_BOSS = !!FLAG('nobosses', false);
 let BOT_FILL = FLAG('bots', S.BOT_FILL);
 if (typeof BOT_FILL !== 'number') BOT_FILL = S.BOT_FILL;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 // two matches run at once, as on the Worker: a solo room and a duo room (duo takes parties of two only)
 const games = {
-  solo: createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, bots: BOT_FILL, mode: 'solo' }),
-  duo: createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, bots: BOT_FILL, mode: 'duo' }),
+  solo: createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, noboss: NO_BOSS, bots: BOT_FILL, mode: 'solo' }),
+  duo: createGame({ fast: FAST, nostorm: NO_STORM, nobus: NO_BUS, noboss: NO_BOSS, bots: BOT_FILL, mode: 'duo' }),
 };
 // --dev-party (local tests only): ?party=ID&partner=NAME stands in for a signed-in party, since this server has no accounts
 const DEV_PARTY = process.argv.includes('--dev-party');

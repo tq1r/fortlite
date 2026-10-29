@@ -217,6 +217,10 @@ async function fetchTicket() {
 }
 let connectedMode = null;   // the room this socket is in: 'solo' or 'duo'
 let rejectMsg = '';          // the server's reason when it turns a socket away
+let reconnectTries = 0;      // automatic reconnects since the last welcome
+let reconnectTimer = 0, heartbeatTimer = 0;
+const MAX_RECONNECTS = 6;
+function stopHeartbeat() { clearInterval(heartbeatTimer); heartbeatTimer = 0; }
 async function connect() {
   // FORTLITE_SERVER (set in config.js) points the page at a separate game server, e.g. \"https://my-server.example.com\"
   const base = (window.FORTLITE_SERVER || '').replace(/\/+$/, '');
@@ -232,7 +236,11 @@ async function connect() {
   ws.onopen = () => {
     wsReady = true;
     ws.send(JSON.stringify({ t: 'hello', name: connectedName }));
+    send({ t: 'set', autoPick: !!FL_SET.autoPick });
     setStatus('Connected! Waiting for server…');
+    // answer the server's pings, and send our own, so an idle socket is never cut off
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => send({ t: 'pong' }), 15000);
   };
   ws.onmessage = e => {
     let m; try { m = JSON.parse(e.data); } catch (_) { return; }
@@ -240,12 +248,23 @@ async function connect() {
   };
   ws.onclose = () => {
     wsReady = false;
+    stopHeartbeat();
     if (rejectMsg) {
       const msg = rejectMsg; rejectMsg = '';
       mode = 'menu'; show('menu'); setStatus(msg); toast(msg);
       return;
     }
-    if (mode !== 'menu') show('disc');
+    if (mode === 'menu') return;
+    // drop out quietly: reconnect a few times before showing the lost-connection screen
+    if (reconnectTries < MAX_RECONNECTS) {
+      reconnectTries++;
+      const wait = Math.min(8, 1.5 * reconnectTries);
+      setStatus('Connection dropped. Reconnecting (' + reconnectTries + ' of ' + MAX_RECONNECTS + ')…');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => { if (mode !== 'menu') connect(); }, wait * 1000);
+      return;
+    }
+    show('disc');
   };
   ws.onerror = () => { if (mode === 'menu') setStatus('Could not reach the server.'); };
 }
@@ -253,7 +272,9 @@ function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
 
 function handle(m) {
   switch (m.t) {
+    case 'ping': send({ t: 'pong' }); break;
     case 'welcome': {
+      reconnectTries = 0;
       myId = m.id;
       if (m.state === 'lobby') { mode = 'lobby'; show('lobby'); }
       else { mode = 'spec'; show(null); hudVisible(true); toast('Match in progress — spectating. Next match soon!'); }
@@ -330,6 +351,7 @@ function onSnap(m) {
     p.hp = a[4]; p.shield = a[5]; p.team = a[6]; p.wv = a[7]; p.kills = a[10];
     p.ph = a[11] || 0; p.alt = (a[12] || 0) / 100; p.outfit = a[13] || 0;
     p.kn = !!a[14]; p.bleed = a[15] || 0; p.revPct = a[16] || 0; p.head = a[17] || 0;
+    p.boss = !!a[18]; p.medal = !!a[19];
     if (id === myId && me) { me.serverX = a[1]; me.serverY = a[2]; me.ph = p.ph; me.alt = p.alt; }
   }
   if (m.bus) {
@@ -633,6 +655,7 @@ function leaveMatch() {
   $('pauseMenu').classList.add('hidden');
   const old = ws;
   ws = null; wsReady = false;
+  clearTimeout(reconnectTimer); stopHeartbeat();
   if (old) { old.onclose = null; old.onmessage = null; try { old.close(); } catch (_) { /* already closed */ } }
   mode = 'menu';
   show('menu');
@@ -748,6 +771,7 @@ const SVGI = {
   shield: '<svg viewBox="0 0 32 32"><path d="M16 3 L27 7 v8 c0 7 -5 12 -11 14 C10 27 5 22 5 15 V7 Z" fill="#4aa7e8" stroke="#1f6ea8" stroke-width="1.8"/><path d="M16 8 v10" stroke="#e8f6ff" stroke-width="3" stroke-linecap="round"/></svg>',
   medkit: '<svg viewBox="0 0 32 32"><rect x="4" y="7" width="24" height="20" rx="4" fill="#e8ecdf" stroke="#9aa48f" stroke-width="1.8"/><rect x="14" y="11" width="4" height="12" fill="#e04444"/><rect x="10" y="15" width="12" height="4" fill="#e04444"/></svg>',
 };
+const MEDAL_ICON = '<svg viewBox="0 0 40 40" width="34" height="34"><path d="M12 3 L19 15 L13 15 L8 4 Z" fill="#c4362f"/><path d="M28 3 L21 15 L27 15 L32 4 Z" fill="#8f2620"/><circle cx="20" cy="26" r="10" fill="#ffd23a" stroke="#6b4a00" stroke-width="2"/><circle cx="20" cy="26" r="5.5" fill="none" stroke="#fff3b0" stroke-width="1.5"/></svg>';
 const CON_ICON = { mini: SVGI.mini, shield: SVGI.shield, medkit: SVGI.medkit };
 // knocked: the bleed-out timer. Next to a downed teammate: the hold-E revive prompt with progress.
 function updateDownBox() {
@@ -773,6 +797,88 @@ function updateDownBox() {
   box.lastChild.firstChild.style.width = pct + '%';
 }
 
+// ============ Inventory (I): weapons, resources and the hotbar ============
+let invOpen = false, invSel = 0;
+function setInv(on) {
+  invOpen = !!on;
+  $('invPanel').classList.toggle('hidden', !invOpen);
+  keys.clear(); mouse.fire = false;
+  if (invOpen) { invSel = (you && you.sel) || 0; renderInv(); }
+}
+function invUsable(i) { return i === 0 || !!(you && you.slots && you.slots[i]); }
+function invHold() { if (invUsable(invSel)) selectSlot(invSel); }
+function invDrop() { if (invUsable(invSel)) selectSlot(invSel); send({ t: 'act', a: 'drop' }); renderInv(); }
+function handleInvKey(c) {
+  if (c === 'KeyI' || c === 'Escape') { setInv(false); return; }
+  if (c === 'KeyE' || c === 'Enter') { invHold(); setInv(false); return; }
+  if (c === 'KeyG') { invDrop(); return; }
+  if (/^Digit[1-5]$/.test(c)) { invSel = +c.slice(5) - 1; renderInv(); return; }
+  if (c === 'ArrowRight') { invSel = (invSel + 1) % 5; renderInv(); return; }
+  if (c === 'ArrowLeft') { invSel = (invSel + 4) % 5; renderInv(); return; }
+}
+function invIcon(s) {
+  if (!s) return '';
+  if (s.k === 'pick') return SVGI.pick;
+  if (s.k === 'm') return MEDAL_ICON;
+  if (s.k === 'w') return '<img alt="" src="assets/guns/' + S.WEAPONS[s.w].id + '.png">';
+  return CON_ICON[s.c] || SVGI.mini;
+}
+function invName(s) {
+  if (!s) return 'Empty';
+  if (s.k === 'pick') return 'Pickaxe';
+  if (s.k === 'w') return S.RARITY[s.r].name + ' ' + S.WEAPONS[s.w].name;
+  if (s.k === 'm') return S.MEDAL.name;
+  return S.CONSUM[s.c].name;
+}
+function invTile(i) {
+  const s = you.slots[i];
+  const d = document.createElement('div');
+  d.className = 'invTile' + (i === invSel ? ' sel' : '') + (s ? '' : ' empty');
+  const key = document.createElement('span'); key.className = 'invKey'; key.textContent = i + 1;
+  const ic = document.createElement('div'); ic.className = 'invIc'; ic.innerHTML = invIcon(s);
+  d.append(key, ic);
+  if (s && s.k === 'w') { const c = document.createElement('span'); c.className = 'invCnt'; c.textContent = s.mag; d.append(c); }
+  if (s && s.k === 'c') { const c = document.createElement('span'); c.className = 'invCnt'; c.textContent = s.n; d.append(c); }
+  if (s) {
+    const bar = document.createElement('div'); bar.className = 'invRar';
+    bar.style.background = s.k === 'w' ? S.RARITY[s.r].color : s.k === 'm' ? S.MEDAL.color : (s.k === 'c' ? S.CONSUM[s.c].color : 'transparent');
+    d.append(bar);
+  }
+  d.onclick = () => { invSel = i; if (invUsable(i)) selectSlot(i); renderInv(); };
+  return d;
+}
+function invChip(label, n) {
+  const d = document.createElement('div'); d.className = 'invChip';
+  const b = document.createElement('b'); b.textContent = label;
+  const v = document.createElement('span'); v.textContent = n;
+  d.append(b, v); return d;
+}
+function renderInv() {
+  if (!invOpen || !you || !you.slots) return;
+  const hot = $('invHot'), wpn = $('invWpn'), res = $('invRes'), desc = $('invDesc');
+  hot.innerHTML = '';
+  for (let i = 0; i < 5; i++) hot.append(invTile(i));
+  wpn.innerHTML = '';
+  let any = false;
+  for (let i = 0; i < 5; i++) { const s = you.slots[i]; if (s && s.k === 'w') { any = true; wpn.append(invTile(i)); } }
+  if (!any) wpn.innerHTML = '<div class="invNone">No weapons. Find some in chests and on the ground.</div>';
+  res.innerHTML = '';
+  for (const m of ['wood', 'stone', 'metal']) res.append(invChip(m.toUpperCase(), (you.mats && you.mats[m]) || 0));
+  for (const a of Object.keys(S.AMMO_NAME)) res.append(invChip(S.AMMO_NAME[a].toUpperCase() + ' AMMO', (you.ammo && you.ammo[a]) || 0));
+  const arm = you.armor ? S.ARMOR[you.armor] : null;
+  res.append(invChip('ARMOR', arm ? arm.name.replace(' Armor', '') + ' -' + Math.round(arm.red * 100) + '%' : 'None'));
+  const s = you.slots[invSel];
+  desc.innerHTML = '';
+  const t = document.createElement('div'); t.className = 'invDescT'; t.textContent = invName(s);
+  const b = document.createElement('div'); b.className = 'invDescB';
+  b.textContent = !s ? 'EMPTY' : s.k === 'w' ? 'Magazine ' + s.mag + '. Press E to hold, G to drop.'
+    : s.k === 'm' ? 'Shows your position on every map while you hold it. G to drop.' : 'Press E to hold, G to drop.';
+  desc.append(t, b);
+}
+$('invOptHold').onclick = () => { invHold(); setInv(false); };
+$('invOptDrop').onclick = () => invDrop();
+$('invOptBack').onclick = () => setInv(false);
+
 function updateHUD() {
   if (!you) return;
   updateDownBox();
@@ -797,12 +903,16 @@ function updateHUD() {
         cnt.textContent = s.mag;
         nm.textContent = S.RARITY[s.r].name + ' ' + S.WEAPONS[s.w].name;
         rar.style.background = S.RARITY[s.r].color;
+      } else if (s.k === 'm') {
+        icon.innerHTML = MEDAL_ICON; icon.dataset.k = 'm'; cnt.textContent = '';
+        nm.textContent = S.MEDAL.name; rar.style.background = S.MEDAL.color;
       } else {
         icon.innerHTML = CON_ICON[s.c] || SVGI.mini; icon.dataset.k = 'c' + s.c; cnt.textContent = s.n;
         nm.textContent = S.CONSUM[s.c].name; rar.style.background = S.CONSUM[s.c].color;
       }
     }
   }
+  if (invOpen) renderInv();
   // ammo
   const s = you.slots && you.slots[you.sel];
   if (s && s.k === 'w') {
@@ -850,6 +960,8 @@ addEventListener('keydown', e => {
   if (mode === 'menu' && c === 'Enter') { $('playBtn').click(); return; }
   if (bigOpen && (c === 'Escape' || c === 'KeyM')) { toggleBigMap(false); return; }
   if (c === 'KeyM' && mode === 'play' && !pauseOpen) { toggleBigMap(); return; }
+  if (invOpen) { handleInvKey(c); return; }
+  if (c === 'KeyI' && mode === 'play' && !pauseOpen) { setInv(true); return; }
   if (c === 'Escape') { togglePause(); return; }
   if (pauseOpen) return;
   keys.add(c);
@@ -932,12 +1044,12 @@ function sendInput(force) {
   const now = performance.now();
   if (!force && now - lastInputSend < 25) return;
   lastInputSend = now;
-  let [mx, my] = inputAxes();
+  let [mx, my] = invOpen ? [0, 0] : inputAxes();
   if (onIsland) { send({ t: 'input', x: mx, y: my, aim: lme.aim }); return; }
   if (me.kn) { mx = 0; my = 0; }
   // no shooting or building while on the bus or in the air
   inSeq++;
-  send({ t: 'input', n: inSeq, x: mx, y: my, aim: me.aim, f: mouse.fire && me.ph === S.PH.ground && !me.kn, b: buildMode && me.ph === S.PH.ground, r: keys.has('KeyE') });
+  send({ t: 'input', n: inSeq, x: mx, y: my, aim: me.aim, f: !invOpen && mouse.fire && me.ph === S.PH.ground && !me.kn, b: buildMode && me.ph === S.PH.ground, r: keys.has('KeyE') });
   if (me.ph === S.PH.ground) {
     inHist.push({ n: inSeq, x: me.x, y: me.y });
     if (inHist.length > 240) inHist.shift();
@@ -1412,6 +1524,23 @@ function drawLoot(g, l, bob) {
       g.fillStyle = '#9ad54c';
       g.fillRect(x - 2, y - 7, 4, 3);
     }
+  } else if (l.kind === 'armor') {
+    // a chest plate in the tier colour
+    const col = S.ARMOR[l.t] ? S.ARMOR[l.t].color : '#b58cff';
+    g.fillStyle = '#1d2330';
+    g.beginPath(); g.arc(x, y, 15, 0, TAU); g.fill();
+    g.strokeStyle = col; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, 15, 0, TAU); g.stroke();
+    g.fillStyle = col;
+    g.beginPath(); g.moveTo(x - 9, y - 8); g.lineTo(x + 9, y - 8); g.lineTo(x + 9, y + 1);
+    g.quadraticCurveTo(x + 9, y + 8, x, y + 10); g.quadraticCurveTo(x - 9, y + 8, x - 9, y + 1); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(x - 6, y - 6, 12, 3);
+  } else if (l.kind === 'medal') {
+    g.fillStyle = '#1d2330';
+    g.beginPath(); g.arc(x, y, 15, 0, TAU); g.fill();
+    g.strokeStyle = S.MEDAL.color; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, 15, 0, TAU); g.stroke();
+    g.fillStyle = '#c4362f'; g.fillRect(x - 6, y - 14, 5, 8); g.fillRect(x + 1, y - 14, 5, 8);
+    g.fillStyle = S.MEDAL.color; g.beginPath(); g.arc(x, y + 3, 6.5, 0, TAU); g.fill();
+    g.strokeStyle = '#6b4a00'; g.lineWidth = 1.5; g.stroke();
   } else if (l.kind === 'mats') {
     const col = S.MAT_COLOR[l.m];
     g.fillStyle = col;
@@ -1447,6 +1576,23 @@ function drawHeadwear(g, x, y, idx) {
   g.restore();
 }
 
+// Bosses: a dark cape behind the body, then horns and a gold crown band on top.
+function drawBossCape(g, x, y, aim) {
+  g.save(); g.translate(x, y); g.rotate(aim + Math.PI);
+  g.fillStyle = '#2a0c10'; g.strokeStyle = '#120406'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(-6, -14); g.quadraticCurveTo(-36, -8, -32, 26); g.lineTo(-12, 30);
+  g.quadraticCurveTo(-4, 8, 6, 14); g.closePath(); g.fill(); g.stroke();
+  g.restore();
+}
+function drawBossGear(g, x, y) {
+  g.fillStyle = '#ecd9b0'; g.strokeStyle = '#3a2a18'; g.lineWidth = 1.5;
+  for (const sx of [-1, 1]) {
+    g.beginPath(); g.moveTo(x + sx * 9, y - 12); g.quadraticCurveTo(x + sx * 26, y - 30, x + sx * 22, y - 40);
+    g.quadraticCurveTo(x + sx * 18, y - 26, x + sx * 5, y - 8); g.closePath(); g.fill(); g.stroke();
+  }
+  g.strokeStyle = '#ffd23a'; g.lineWidth = 3;
+  g.beginPath(); g.arc(x, y, S.PLAYER_R + 1, 0, TAU); g.stroke();
+}
 function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   if (p == null) return;
   alt = alt || 0;
@@ -1489,6 +1635,7 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
     // shadow
     g.fillStyle = 'rgba(0,0,0,0.28)';
     g.beginPath(); g.ellipse(x, y + 16, 18, 7, 0, 0, TAU); g.fill();
+    if (p.boss) drawBossCape(g, x, y, aim);
   }
 
   // swing animation
@@ -1496,8 +1643,13 @@ function drawPlayer(g, p, x, y, aim, now, focus, alt) {
   const sw = swings.get(p.id);
   if (sw != null) swing = 1 - sw / 0.3;
 
-  FLArt.player(g, x, y, S.OUTFITS[p.outfit || 0].color, p.id);
-  drawHeadwear(g, x, y, p.head || 0);
+  if (p.boss) {
+    FLArt.player(g, x, y, '#b3261e', p.id);
+    drawBossGear(g, x, y);
+  } else {
+    FLArt.player(g, x, y, S.OUTFITS[p.outfit || 0].color, p.id);
+    drawHeadwear(g, x, y, p.head || 0);
+  }
   if (p.kn) { g.fillStyle = 'rgba(150,10,20,0.45)'; g.beginPath(); g.ellipse(x, y, S.PLAYER_R + 9, S.PLAYER_R - 2, 0, 0, TAU); g.fill(); }
   if (teamCol) { g.strokeStyle = teamCol; g.lineWidth = 3; g.beginPath(); g.arc(x, y, S.PLAYER_R + 3, 0, TAU); g.stroke(); }
 
@@ -1783,6 +1935,16 @@ function drawMapDynamic(g, px, k) {
     g.beginPath(); g.arc(sc(x), sc(y), r, 0, TAU); g.fill();
     g.strokeStyle = 'rgba(0, 0, 0, 0.7)'; g.lineWidth = 1; g.stroke();
   };
+  // medallion holders show on every map: a pulsing gold ring with a dot
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+  for (const p of players.values()) {
+    if (!p.medal || !p.buf.length || !snapAlive.has(p.id)) continue;
+    const ip = interpPlayer(p, performance.now() - 120);
+    if (!ip) continue;
+    g.strokeStyle = 'rgba(255, 210, 58, ' + (0.45 + 0.55 * pulse).toFixed(2) + ')'; g.lineWidth = 2;
+    g.beginPath(); g.arc(sc(ip.x), sc(ip.y), (bigOpen ? 9 : 6) + pulse * 2.5, 0, TAU); g.stroke();
+    dot(ip.x, ip.y, S.MEDAL.color, bigOpen ? 4 : 3);
+  }
   const myTeam = players.get(myId) ? players.get(myId).team : 0;
   if (mode === 'play' && me && you && you.alive) {
     if (myTeam > 0) for (const p of players.values()) {
@@ -2650,6 +2812,9 @@ const SET_ROWS = [
     desc: 'Makes the game brighter or darker. 100% is the normal look.' },
   { key: 'uiContrast', label: 'UI contrast', range: [80, 140, 5], fmt: v => (v / 100).toFixed(2) + 'x',
     desc: 'Adjusts the contrast of menus and the HUD so text is easier to read.' },
+  { sec: 'Gameplay' },
+  { key: 'autoPick', label: 'Auto pick up', opts: [false, true], fmt: v => v ? 'On' : 'Off',
+    desc: 'Off (default): walk over loot and press E to pick it up. On: loot is picked up as you walk over it, when you have a free slot.' },
   { sec: 'Audio' },
   { key: 'sfxVolume', label: 'Sound effects', range: [0, 100, 5], fmt: v => v + '%',
     desc: 'Volume of gunshots, footsteps and other effects. 0% is silent.' },

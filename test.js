@@ -97,7 +97,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function main() {
   console.log(`Starting server on :${PORT} (fast mode, 6 bots)...`);
-  const server = spawn('node', ['server.js', '--port', PORT, '--bots', 6, '--fast', '--nobus'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
+  const server = spawn('node', ['server.js', '--port', PORT, '--bots', 6, '--fast', '--nobus', '--nobosses'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'] });
   const kill = () => { try { server.kill('SIGKILL'); } catch (_) {} };
   process.on('exit', kill);
   process.on('SIGINT', () => { kill(); process.exit(130); });
