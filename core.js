@@ -161,7 +161,7 @@ function genMap(seed) {
 
   // ---- the hand-made layout (map_layout.js): places, roads and buildings are authored, not random
   const LAYOUT = require('./map_layout.js');
-  const WALL_MAT = { ruins: 'stone', industrial: 'metal', quarry: 'stone' };
+  const WALL_MAT = { castle: 'stone', ruins: 'stone', industrial: 'metal' };
   const PROP_OBS = { X: ['crate', 26, 250, 'metal'], T: ['tree', 26, 200, 'wood'], R: ['rock', 30, 250, 'stone'], B: ['bush', 28, 999, null], P: ['water', 34, 1, null] };
   const placed = LAYOUT.POIS.map(def => {
     const rows = LAYOUT.turnPlan(LAYOUT.compilePOI(def).rows, def.rot);
