@@ -1353,7 +1353,7 @@ function drawChest(g, c, now) {
   g.beginPath(); g.ellipse(c.x, c.y + 16, 26, 8, 0, 0, TAU); g.fill();
   if (!c.open) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
-    g.strokeStyle = (c.lg ? 'rgba(255, 140, 30,' : 'rgba(255, 210, 58,') + (0.35 + 0.4 * pulse) + ')';
+    g.strokeStyle = (c.lg ? 'rgba(255, 140, 30,' : c.bl ? 'rgba(55, 168, 255,' : 'rgba(255, 210, 58,') + (0.35 + 0.4 * pulse) + ')';
     g.lineWidth = 4;
     g.strokeRect(c.x - w / 2 - 3, c.y - h / 2 - 3, w + 6, h + 6);
   }

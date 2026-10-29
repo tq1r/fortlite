@@ -88,6 +88,10 @@
     { name: 'Legendary', mult: 1.45, color: '#ffa93a' },
   ];
 
+  // chest tiers, decided when the match is generated (before anyone can see or open them).
+  // Chests on the layout's 'L' spots are always legendary. Every other chest rolls these odds.
+  S.CHEST_ODDS = { blue: 0.20, legendary: 0.05 };
+
   // ammo granted when the weapon is picked up
   S.WEAPON_PICKUP_AMMO = { light: 30, medium: 30, heavy: 6, shell: 8 };
   S.AMMO_NAME = { light: 'Light', medium: 'Medium', heavy: 'Heavy', shell: 'Shells' };

@@ -159,6 +159,15 @@ function genMap(seed) {
     return o;
   };
 
+  // chest tier, rolled now so it is fixed before the match starts ('L' spots are always legendary)
+  const chestTier = (forced) => {
+    if (forced) return 'legendary';
+    const r = rand();
+    if (r < S.CHEST_ODDS.legendary) return 'legendary';
+    if (r < S.CHEST_ODDS.legendary + S.CHEST_ODDS.blue) return 'blue';
+    return 'common';
+  };
+
   // ---- the hand-made layout (map_layout.js): places, roads and buildings are authored, not random
   const LAYOUT = require('./map_layout.js');
   const WALL_MAT = { castle: 'stone', ruins: 'stone', industrial: 'metal' };
@@ -183,7 +192,7 @@ function genMap(seed) {
         const gx = pl.gx0 + c, gy = pl.gy0 + r;
         const wx = gx * S.GRID + S.GRID / 2, wy = gy * S.GRID + S.GRID / 2;
         if (ch === '#') G.walls.set(S.wallKey(gx, gy), { gx, gy, mat, hp, maxHp: hp, prebuilt: true });
-        if (ch === 'C' || ch === 'L') G.chests.push({ id: nextEntityId++, x: wx, y: wy, open: false, legendary: ch === 'L' });
+        if (ch === 'C' || ch === 'L') { const tier = chestTier(ch === 'L'); G.chests.push({ id: nextEntityId++, x: wx, y: wy, open: false, tier, legendary: tier === 'legendary' }); }
         if (PROP_OBS[ch]) { const o = PROP_OBS[ch]; addObs(o[0], wx, wy, o[1], o[2], o[3]); }
         const isFloor = ch === '.' || ch === 'D' || ch === 'C' || ch === 'L';
         if (isFloor && run < 0) run = c;
@@ -282,7 +291,7 @@ function genMap(seed) {
   for (let i = 0; i < Math.round(5 * AREA); i++) {   // few open-field chests: gear is found by searching
     for (let tries = 0; tries < 300; tries++) {
       const x = 160 + rand() * (W - 320), y = 160 + rand() * (W - 320);
-      if (okSpot(x, y, 34, 60)) { G.chests.push({ id: nextEntityId++, x, y, open: false }); break; }
+      if (okSpot(x, y, 34, 60)) { const tier = chestTier(false); G.chests.push({ id: nextEntityId++, x, y, open: false, tier, legendary: tier === 'legendary' }); break; }
     }
   }
   scatterByBiome('crate', Math.round(16 * AREA), 26, 26, 250, 'metal', { plains: 1, forest: 0.6, swamp: 0.6, desert: 1, snow: 0.6 }, () => 1, 100000);
@@ -455,7 +464,7 @@ function startMsg(forClient) {
       size: S.WORLD, grid: S.GRID,
       obstacles: G.obstacles.map(o => ({ i: o.id, ty: o.type, x: Math.round(o.x), y: Math.round(o.y), r: o.r, hp: o.hp, mhp: o.maxHp })),
       floors: G.floors,
-      chests: G.chests.map(c => ({ i: c.id, x: Math.round(c.x), y: Math.round(c.y), open: c.open, lg: c.legendary ? 1 : 0 })),
+      chests: G.chests.map(c => ({ i: c.id, x: Math.round(c.x), y: Math.round(c.y), open: c.open, lg: c.tier === 'legendary' ? 1 : 0, bl: c.tier === 'blue' ? 1 : 0 })),
       walls: [...G.walls.values()].map(w => ({ gx: w.gx, gy: w.gy, m: w.mat, hp: Math.round(w.hp), mhp: w.maxHp })),
       loot: [...G.loot.values()].map(serializeLoot),
       storm: { grace: STORM_GRACE, phases: stormPhases, startR: STORM_CFG.startR },
@@ -1088,8 +1097,9 @@ function autoPickup(p) {
 function openChest(p, chest) {
   chest.open = true;
   const roll = (arr) => { let t = 0; for (const a of arr) t += a[1]; let r = Math.random() * t; for (const a of arr) { r -= a[1]; if (r <= 0) return a[0]; } return arr[0][0]; };
-  const legendary = !!chest.legendary;
-  const rar = legendary ? roll([[3, 70], [4, 30]]) : roll([[0, 35], [1, 30], [2, 20], [3, 10], [4, 5]]);
+  const tier = chest.tier || (chest.legendary ? 'legendary' : 'common');
+  const legendary = tier === 'legendary';
+  const rar = legendary ? roll([[3, 70], [4, 30]]) : tier === 'blue' ? roll([[2, 70], [3, 30]]) : roll([[0, 35], [1, 30], [2, 20], [3, 10], [4, 5]]);
   const wi = Math.floor(Math.random() * S.WEAPONS.length);
   const drops = [];
   const dropDef = (def) => {
