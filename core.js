@@ -145,6 +145,7 @@ function genMap(seed) {
     if (x < 80 + r || y < 80 + r || x > W - 80 - r || y > W - 80 - r) return false;
     if (S.coastDist(x, y) < r + 40) return false;
     if (roadDist(x, y) < r + ROAD_HALF + 34) return false;
+    if (G.walls.has(S.wallKey(Math.floor(x / S.GRID), Math.floor(y / S.GRID)))) return false;
     for (const o of nearObs(x, y, r + minDist + MAX_R)) {
       if (S.dist2(x, y, o.x, o.y) < (minDist + o.r) ** 2) return false;
     }
@@ -158,124 +159,37 @@ function genMap(seed) {
     return o;
   };
 
-  // ---- building helper: perimeter walls with door gaps + interior chests ----
-  const placeBuilding = (gx0, gy0, cw, ch, mat, nChests, faceX, faceY) => {
-    G.floors.push({ x: gx0 * S.GRID, y: gy0 * S.GRID, w: cw * S.GRID, h: ch * S.GRID, mat });
-    const doors = new Set();
-    const bcx = (gx0 + cw / 2) * S.GRID, bcy = (gy0 + ch / 2) * S.GRID;
-    const ddx = faceX - bcx, ddy = faceY - bcy;
-    if (Math.abs(ddx) >= Math.abs(ddy)) doors.add((ddx > 0 ? 'e' : 'w') + (1 + Math.floor(rand() * (ch - 2))));
-    else doors.add((ddy > 0 ? 's' : 'n') + (1 + Math.floor(rand() * (cw - 2))));
+  // ---- the hand-made layout (map_layout.js): places, roads and buildings are authored, not random
+  const LAYOUT = require('./map_layout.js');
+  const WALL_MAT = { ruins: 'stone', industrial: 'metal', quarry: 'stone' };
+  const PROP_OBS = { X: ['crate', 26, 250, 'metal'], T: ['tree', 26, 200, 'wood'], R: ['rock', 30, 250, 'stone'], B: ['bush', 28, 999, null], P: ['water', 34, 1, null] };
+  const placed = LAYOUT.POIS.map(def => {
+    const rows = LAYOUT.turnPlan(LAYOUT.compilePOI(def).rows, def.rot);
+    const cols = Math.max(...rows.map(r => r.length));
+    return { def, rows, cols, gx0: Math.round(def.x / S.GRID) - Math.floor(cols / 2), gy0: Math.round(def.y / S.GRID) - Math.floor(rows.length / 2) };
+  });
+  G.pois = placed.map((pl, i) => ({ id: i, n: pl.def.n, k: pl.def.k, x: pl.def.x, y: pl.def.y, r: Math.round(Math.max(pl.cols, pl.rows.length) * 30 + 110) }));
+  for (const rd of LAYOUT.ROADS) {
+    G.roads.push({ pts: rd.map(p => [Math.round(p[0]), Math.round(p[1])]) });
+    for (let i = 0; i + 1 < rd.length; i++) roadSegs.push([rd[i][0], rd[i][1], rd[i + 1][0], rd[i + 1][1]]);
+  }
+  for (const pl of placed) {
+    const mat = WALL_MAT[pl.def.k] || 'wood';
     const hp = S.MAT_HP[mat] * 2.5;
-    for (let i = 0; i < cw; i++) {
-      if (!doors.has('n' + i)) G.walls.set(S.wallKey(gx0 + i, gy0), { gx: gx0 + i, gy: gy0, mat, hp, maxHp: hp, prebuilt: true });
-      if (!doors.has('s' + i)) G.walls.set(S.wallKey(gx0 + i, gy0 + ch), { gx: gx0 + i, gy: gy0 + ch, mat, hp, maxHp: hp, prebuilt: true });
-    }
-    for (let j = 0; j < ch; j++) {
-      if (!doors.has('w' + j)) G.walls.set(S.wallKey(gx0, gy0 + j), { gx: gx0, gy: gy0 + j, mat, hp, maxHp: hp, prebuilt: true });
-      if (!doors.has('e' + j)) G.walls.set(S.wallKey(gx0 + cw, gy0 + j), { gx: gx0 + cw, gy: gy0 + j, mat, hp, maxHp: hp, prebuilt: true });
-    }
-    for (let c = 0; c < nChests; c++) {
-      G.chests.push({
-        id: nextEntityId++,
-        x: (gx0 + 1 + rand() * (cw - 2)) * S.GRID,
-        y: (gy0 + 1 + rand() * (ch - 2)) * S.GRID,
-        open: false,
-      });
-    }
-  };
-  const floorFree = (gx0, gy0, cw, ch) => {
-    if (gx0 < 2 || gy0 < 2 || gx0 + cw > S.CELLS - 2 || gy0 + ch > S.CELLS - 2) return false;
-    const x0 = gx0 * S.GRID - 40, y0 = gy0 * S.GRID - 40, x1 = (gx0 + cw) * S.GRID + 40, y1 = (gy0 + ch) * S.GRID + 40;
-    if (G.floors.some(f => !(f.x + f.w < x0 || f.x > x1 || f.y + f.h < y0 || f.y > y1))) return false;
-    // the whole footprint must be on land and off the roads
-    for (const [px, py] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1], [(x0 + x1) / 2, (y0 + y1) / 2]]) {
-      if (S.coastDist(px, py) < 60 || roadDist(px, py) < ROAD_HALF + 40) return false;
-    }
-    return true;
-  };
-
-  // ---- points of interest on land, spread out
-  const POI_POOL = [
-    ['Rustwater Yard', 'industrial'], ['Gull Point Light', 'coast'], ['Thornwick Farm', 'farm'],
-    ['Cinder Hollow', 'quarry'], ['Lantern Market', 'town'], ['Hightower Depot', 'town'],
-    ['Mossgate Ruins', 'ruins'], ['Fogbank Harbor', 'coast'], ['Saltmarsh Works', 'industrial'],
-    ['Ironbark Lodge', 'farm'], ['Brightwell Station', 'town'], ['Old Kiln Row', 'ruins'],
-    ['Tallreed Mill', 'farm'], ['Eastwind Depot', 'industrial'], ['Frostspire Camp', 'quarry'],
-    ['Dune Hollow', 'ruins'], ['Blackfen Shacks', 'farm'], ['Glasswater Dock', 'coast'],
-    ['Northcrest Lift', 'town'], ['Sandsong Oasis', 'town'], ['Willow Bend', 'farm'],
-    ['Redrock Quarry', 'quarry'],
-  ];
-  for (let i = POI_POOL.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [POI_POOL[i], POI_POOL[j]] = [POI_POOL[j], POI_POOL[i]];
-  }
-  G.pois = [];
-  let poiTries = 0;
-  while (G.pois.length < S.POI_COUNT && poiTries++ < 20000) {
-    const x = rand() * W, y = rand() * W;
-    if (!S.isLand(x, y) || S.coastDist(x, y) < 420) continue;
-    if (x < 500 || y < 500 || x > W - 500 || y > W - 500) continue;
-    if (G.pois.some(p => S.dist(p.x, p.y, x, y) < 980)) continue;
-    const [n, k] = POI_POOL[G.pois.length];
-    G.pois.push({ id: G.pois.length, n, k, x, y, r: 280 });
-  }
-
-  // ---- roads: connect the POIs with a minimum spanning tree, bent a little
-  if (G.pois.length > 1) {
-    const inTree = [0], done = new Set([0]);
-    while (done.size < G.pois.length) {
-      let best = null, bd = 1e18;
-      for (const a of done) for (let b = 0; b < G.pois.length; b++) {
-        if (done.has(b)) continue;
-        const d = S.dist2(G.pois[a].x, G.pois[a].y, G.pois[b].x, G.pois[b].y);
-        if (d < bd) { bd = d; best = [a, b]; }
+    for (let r = 0; r < pl.rows.length; r++) {
+      let run = -1;
+      for (let c = 0; c <= pl.cols; c++) {
+        const ch = c < pl.cols ? (pl.rows[r][c] || ' ') : ' ';
+        const gx = pl.gx0 + c, gy = pl.gy0 + r;
+        const wx = gx * S.GRID + S.GRID / 2, wy = gy * S.GRID + S.GRID / 2;
+        if (ch === '#') G.walls.set(S.wallKey(gx, gy), { gx, gy, mat, hp, maxHp: hp, prebuilt: true });
+        if (ch === 'C' || ch === 'L') G.chests.push({ id: nextEntityId++, x: wx, y: wy, open: false, legendary: ch === 'L' });
+        if (PROP_OBS[ch]) { const o = PROP_OBS[ch]; addObs(o[0], wx, wy, o[1], o[2], o[3]); }
+        const isFloor = ch === '.' || ch === 'D' || ch === 'C' || ch === 'L';
+        if (isFloor && run < 0) run = c;
+        if (!isFloor && run >= 0) { G.floors.push({ x: (pl.gx0 + run) * S.GRID, y: gy * S.GRID, w: (c - run) * S.GRID, h: S.GRID, mat }); run = -1; }
       }
-      done.add(best[1]); inTree.push(best[1]);
-      const A = G.pois[best[0]], B = G.pois[best[1]];
-      const L = S.dist(A.x, A.y, B.x, B.y);
-      const pts = [[A.x, A.y]];
-      const steps = Math.max(2, Math.round(L / 1100));
-      const nx = -(B.y - A.y) / L, ny = (B.x - A.x) / L;
-      for (let s = 1; s < steps; s++) {
-        const t = s / steps, off = (rand() - 0.5) * 380;
-        pts.push([A.x + (B.x - A.x) * t + nx * off, A.y + (B.y - A.y) * t + ny * off]);
-      }
-      pts.push([B.x, B.y]);
-      G.roads.push({ pts: pts.map(p => [Math.round(p[0]), Math.round(p[1])]) });
-      for (let i = 0; i + 1 < pts.length; i++) roadSegs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]]);
     }
-  }
-
-  // ---- buildings in each POI, kept off the roads
-  for (const poi of G.pois) {
-    const nB = 4 + Math.floor(rand() * 3);
-    let placed = 0, tries = 0;
-    while (placed < nB && tries++ < 200) {
-      const cw = 4 + Math.floor(rand() * 3), ch = 3 + Math.floor(rand() * 2);
-      const a = rand() * Math.PI * 2, d = 60 + rand() * 200;
-      const cx = poi.x + Math.cos(a) * d, cy = poi.y + Math.sin(a) * d;
-      const gx0 = Math.round((cx - cw * S.GRID / 2) / S.GRID), gy0 = Math.round((cy - ch * S.GRID / 2) / S.GRID);
-      if (!floorFree(gx0, gy0, cw, ch)) continue;
-      const mat = poi.k === 'ruins' ? 'stone' : poi.k === 'industrial' ? 'metal' : ['wood', 'stone', 'metal'][Math.floor(rand() * 3)];
-      placeBuilding(gx0, gy0, cw, ch, mat, 1 + (rand() < 0.6 ? 1 : 0), poi.x, poi.y);
-      placed++;
-    }
-  }
-  // a few lone houses next to roads
-  let houses = 0;
-  const HOUSE_GOAL = Math.round(14 * (W / 11000) ** 2);   // same houses per area as the 11000 map
-  for (let tries = 0; tries < 8000 && houses < HOUSE_GOAL; tries++) {
-    const x = rand() * W, y = rand() * W;
-    const rd = roadDist(x, y);
-    if (rd < 150 || rd > 420) continue;
-    const cw = 3 + Math.floor(rand() * 2), ch = 3;
-    const gx0 = Math.floor(x / S.GRID), gy0 = Math.floor(y / S.GRID);
-    if (!floorFree(gx0, gy0, cw, ch)) continue;
-    if (G.pois.some(p => S.dist(p.x, p.y, x, y) < 520)) continue;
-    const [rx, ry] = nearestRoadPoint(x, y);
-    placeBuilding(gx0, gy0, cw, ch, ['wood', 'stone', 'metal'][Math.floor(rand() * 3)], 1, rx, ry);
-    houses++;
   }
 
   // ---- lakes and rivers (water is impassable; bridges where roads cross)
@@ -541,7 +455,7 @@ function startMsg(forClient) {
       size: S.WORLD, grid: S.GRID,
       obstacles: G.obstacles.map(o => ({ i: o.id, ty: o.type, x: Math.round(o.x), y: Math.round(o.y), r: o.r, hp: o.hp, mhp: o.maxHp })),
       floors: G.floors,
-      chests: G.chests.map(c => ({ i: c.id, x: Math.round(c.x), y: Math.round(c.y), open: c.open })),
+      chests: G.chests.map(c => ({ i: c.id, x: Math.round(c.x), y: Math.round(c.y), open: c.open, lg: c.legendary ? 1 : 0 })),
       walls: [...G.walls.values()].map(w => ({ gx: w.gx, gy: w.gy, m: w.mat, hp: Math.round(w.hp), mhp: w.maxHp })),
       loot: [...G.loot.values()].map(serializeLoot),
       storm: { grace: STORM_GRACE, phases: stormPhases, startR: STORM_CFG.startR },
@@ -1174,7 +1088,8 @@ function autoPickup(p) {
 function openChest(p, chest) {
   chest.open = true;
   const roll = (arr) => { let t = 0; for (const a of arr) t += a[1]; let r = Math.random() * t; for (const a of arr) { r -= a[1]; if (r <= 0) return a[0]; } return arr[0][0]; };
-  const rar = roll([[0, 35], [1, 30], [2, 20], [3, 10], [4, 5]]);
+  const legendary = !!chest.legendary;
+  const rar = legendary ? roll([[3, 70], [4, 30]]) : roll([[0, 35], [1, 30], [2, 20], [3, 10], [4, 5]]);
   const wi = Math.floor(Math.random() * S.WEAPONS.length);
   const drops = [];
   const dropDef = (def) => {
@@ -1184,6 +1099,8 @@ function openChest(p, chest) {
   };
   dropDef({ kind: 'weapon', w: wi, r: rar, ammo: ammoForWeapon(wi) });
   dropDef({ kind: 'ammo', at: S.WEAPONS[wi].ammo, count: S.WEAPONS[wi].ammo === 'heavy' ? 6 : S.WEAPONS[wi].ammo === 'shell' ? 8 : 24 });
+  if (legendary) dropDef({ kind: 'weapon', w: Math.floor(Math.random() * S.WEAPONS.length), r: roll([[3, 60], [4, 40]]), ammo: 0 });
+  if (legendary) dropDef({ kind: 'consum', c: 'medkit', count: 2 });
   if (Math.random() < 0.55) dropDef({ kind: 'consum', c: roll([['mini', 40], ['shield', 25], ['medkit', 35]]), count: 1 + (Math.random() < 0.35 ? 1 : 0) });
   if (Math.random() < 0.45) dropDef({ kind: 'mats', m: roll([['wood', 40], ['stone', 35], ['metal', 25]]), amount: 30 });
   ev({ k: 'chest', i: chest.id, x: chest.x, y: chest.y, id: p.id });

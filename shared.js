@@ -55,7 +55,7 @@
   S.FALL_SPEED = 230;                         // steering speed while skydiving
   S.KNOCK = { bleed: 30, revive: 3.5, range: 85, hp: 30, grace: 3.5 }; // grace: a fresh knock is safe for as long as a revive takes // duo: knocked seconds to bleed out, hold-E revive time, reach, hp after revive
   S.FALL_CARRY = 0.45;                        // share of bus velocity carried into the dive
-  S.POI_COUNT = 22;                            // named points of interest per map
+  S.POI_COUNT = 18;                            // named points of interest per map (must match map_layout.js)
   // player phases (sent as small ints in snapshots)
   S.PH = { ground: 0, bus: 1, fall: 2 };
 
@@ -116,16 +116,17 @@
   // ---- Storm -----------------------------------------------------
   // The Fade (storm). Radii scale with the world (MAP_K). Timings give a round of about 20 minutes:
   // 3 min grace, then seven closing phases.
+  // the storm moves 1.5x faster than the first version: waits and shrinks are 2/3 as long
   S.STORM = {
-    grace: 180, startR: Math.round(6600 * S.MAP_K),
+    grace: 120, startR: Math.round(6600 * S.MAP_K),
     phases: [
-      { wait: 120, shrink: 90, r: Math.round(4587 * S.MAP_K), dps: 1 },
-      { wait: 100, shrink: 80, r: Math.round(2860 * S.MAP_K), dps: 2 },
-      { wait: 90, shrink: 75, r: Math.round(1727 * S.MAP_K), dps: 4 },
-      { wait: 75, shrink: 70, r: Math.round(990 * S.MAP_K), dps: 6 },
-      { wait: 60, shrink: 60, r: Math.round(517 * S.MAP_K), dps: 8 },
-      { wait: 50, shrink: 50, r: Math.round(165 * S.MAP_K), dps: 10 },
-      { wait: 40, shrink: 60, r: 0, dps: 12 },
+      { wait: 80, shrink: 60, r: Math.round(4587 * S.MAP_K), dps: 1 },
+      { wait: 67, shrink: 53, r: Math.round(2860 * S.MAP_K), dps: 2 },
+      { wait: 60, shrink: 50, r: Math.round(1727 * S.MAP_K), dps: 4 },
+      { wait: 50, shrink: 47, r: Math.round(990 * S.MAP_K), dps: 6 },
+      { wait: 40, shrink: 40, r: Math.round(517 * S.MAP_K), dps: 8 },
+      { wait: 33, shrink: 33, r: Math.round(165 * S.MAP_K), dps: 10 },
+      { wait: 27, shrink: 40, r: 0, dps: 12 },
     ],
   };
 

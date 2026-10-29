@@ -278,7 +278,7 @@ function onStart(m) {
   world.obstacles = w.obstacles.map(o => ({ id: o.i, type: o.ty, x: o.x, y: o.y, r: o.r, hp: o.hp, maxHp: o.mhp }));
   world.obstacleById = new Map(world.obstacles.map(o => [o.id, o]));
   world.walls = new Map(w.walls.map(v => [S.wallKey(v.gx, v.gy), { gx: v.gx, gy: v.gy, mat: v.m, hp: v.hp, maxHp: v.mhp }]));
-  world.chests = new Map(w.chests.map(c => [c.i, { id: c.i, x: c.x, y: c.y, open: c.open }]));
+  world.chests = new Map(w.chests.map(c => [c.i, { id: c.i, x: c.x, y: c.y, open: c.open, lg: !!c.lg }]));
   world.loot = new Map(w.loot.map(l => [l.i, deserializeLoot(l)]));
   world.floors = w.floors;
   world.stormCfg = w.storm;
@@ -1353,7 +1353,7 @@ function drawChest(g, c, now) {
   g.beginPath(); g.ellipse(c.x, c.y + 16, 26, 8, 0, 0, TAU); g.fill();
   if (!c.open) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
-    g.strokeStyle = 'rgba(255, 210, 58,' + (0.35 + 0.4 * pulse) + ')';
+    g.strokeStyle = (c.lg ? 'rgba(255, 140, 30,' : 'rgba(255, 210, 58,') + (0.35 + 0.4 * pulse) + ')';
     g.lineWidth = 4;
     g.strokeRect(c.x - w / 2 - 3, c.y - h / 2 - 3, w + 6, h + 6);
   }
