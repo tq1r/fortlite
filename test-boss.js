@@ -115,6 +115,9 @@ hm.x = bosses[0].boss.cx + 500; hm.y = bosses[0].boss.cy + 500; hm.hp = 100;
 I.tryPickup(hm, { kind: 'medal' });
 I.damagePlayer(hm, 100, null, 'test');
 ok(Math.abs(hm.hp - 15) < 1e-6, `medallion cuts 100 damage by 15%: 85 taken, hp ${hm.hp.toFixed(1)}`);
+ok(!hm.slots.some(s => s && s.kind === 'medal'), 'medallion takes no inventory slot');
+hm.shield = 0; run(40);   // about 2 s at 2 shield/s
+ok(hm.alive && hm.shield > 3.5 && hm.shield < 4.5, `medallion regenerates shield passively (${hm.shield.toFixed(1)} after 2 s)`);
 G.players.splice(G.players.indexOf(hm), 1);
 
 console.log('-- drops');

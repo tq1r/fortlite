@@ -99,8 +99,9 @@
     heavy: { name: 'Heavy Armor', red: 0.35, rank: 2, color: '#b58cff' },
   };
   // medallion: a held item; whoever holds one shows on every map
-  S.MEDAL = { name: 'Medallion', color: '#ffd23a', red: 0.15,
-    desc: 'Holding it reveals you on every map and cuts the damage you take by 15%.' };
+  // Medallion: a passive, no inventory slot. Carry one and you get these effects.
+  S.MEDAL = { name: 'Medallion', color: '#ffd23a', red: 0.15, regen: 2, shieldCap: 50,
+    desc: 'Passive while carried (takes no inventory space): shield regenerates 2 per second up to 50, you take 15% less damage, and you show on every map.' };
   // the boss drop: one guaranteed Mythic rifle per boss (r = the Mythic rank)
   S.MYTHIC = { name: "Warden's Rifle", w: 'ar', r: 5 };
   // one boss per POI: red skin, heavy armor, a rifle; it holds its POI within the leash

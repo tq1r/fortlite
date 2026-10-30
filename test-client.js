@@ -233,7 +233,7 @@ try {
   deliver({
     t: 'you', hp: 100, sh: 0, armor: 'heavy',
     mats: { wood: 0, stone: 0, metal: 0 }, ammo: { light: 0, medium: 0, heavy: 0, shell: 0 },
-    slots: [{ k: 'pick' }, { k: 'm' }, { k: 'c', c: 'medkit', n: 2 }, null, null],
+    slots: [{ k: 'pick' }, null, { k: 'c', c: 'medkit', n: 2 }, null, null], medal: true,
     sel: 0, reload: 0, use: 0, build: false, bmat: 'wood', alive: true, kills: 0, place: 0,
   });
   deliver({ t: 'ev', k: 'lootAdd', l: { i: 61, x: 1000, y: 1000, k: 'armor', t: 'heavy' } });
@@ -245,7 +245,7 @@ try {
   deliver({
     t: 'you', hp: 100, sh: 0, armor: 'heavy',
     mats: { wood: 0, stone: 0, metal: 0 }, ammo: { light: 0, medium: 30, heavy: 0, shell: 0 },
-    slots: [{ k: 'pick' }, { k: 'm' }, { k: 'c', c: 'medkit', n: 2 }, { k: 'w', w: 3, r: 5, mag: 30, nm: "Warden's Rifle" }, null],
+    slots: [{ k: 'pick' }, null, { k: 'c', c: 'medkit', n: 2 }, { k: 'w', w: 3, r: 5, mag: 30, nm: "Warden's Rifle" }, null], medal: true,
     sel: 0, reload: 0, use: 0, build: false, bmat: 'wood', alive: true, kills: 0, place: 0,
   });
   sandbox._keydown({ code: 'KeyI', repeat: false, preventDefault() {} });

@@ -848,7 +848,6 @@ function invInfo(s) {
     const mythic = s.r === S.MYTHIC.r;
     return { t: invName(s), b: (mythic ? 'MYTHIC. Dropped only by bosses. ' : '') + dmg + ' damage per bullet (+' + extra + '% over a common ' + w.name + '). Magazine ' + (s.mag == null ? w.mag : s.mag) + '. E to hold, G to drop.' };
   }
-  if (s.k === 'm') return { t: S.MEDAL.name, b: S.MEDAL.desc + ' E to hold, G to drop.' };
   return { t: S.CONSUM[s.c].name, b: 'Use it from the hotbar to heal or add shield. E to hold, G to drop.' };
 }
 // Tooltip: follows the pointer over any element that carries a tip (set when the tile is built)
@@ -879,9 +878,9 @@ function gearTile(kind) {
       ? { t: S.ARMOR[you.armor].name, b: 'Cuts incoming damage by ' + Math.round(S.ARMOR[you.armor].red * 100) + '%. A heavier piece replaces the one you wear. Dropped by bosses and by players you defeat.' }
       : { t: 'No armor', b: 'Armor cuts incoming damage: light by 20%, heavy by 35%. Dropped by bosses and by players you defeat.' };
   } else {
-    has = (you.slots || []).some(s => s && s.k === 'm');
+    has = !!you.medal;
     ic.innerHTML = has ? MEDAL_ICON : '';
-    d._tip = has ? invInfo({ k: 'm' })
+    d._tip = has ? { t: S.MEDAL.name, b: S.MEDAL.desc }
       : { t: 'No medallion', b: S.MEDAL.desc + ' Dropped only by bosses (' + Math.round(S.BOSS.medalChance * 100) + '% chance).' };
   }
   d.className = 'invTile' + (has ? '' : ' empty');

@@ -834,7 +834,7 @@ function damagePlayer(victim, amount, attacker, cause) {
     return;
   }
   let dmg = victim.armor ? amount * (1 - S.ARMOR[victim.armor].red) : amount;
-  if (victim.slots.some(s => s && s.kind === 'medal')) dmg *= 1 - S.MEDAL.red;
+  if (victim.hasMedal) dmg *= 1 - S.MEDAL.red;
   if (victim.shield > 0) {
     const absorbed = Math.min(victim.shield, dmg);
     victim.shield -= absorbed; dmg -= absorbed;
@@ -911,8 +911,8 @@ function killPlayer(victim, attacker, cause) {
     if (!s) continue;
     if (s.kind === 'weapon' && !victim.boss) dropAt({ kind: 'weapon', w: s.w, r: s.r, ammo: 0, nm: s.nm });
     else if (s.kind === 'consum') dropAt({ kind: 'consum', c: s.c, count: s.count });
-    else if (s.kind === 'medal') dropAt({ kind: 'medal' });
   }
+  if (victim.hasMedal) { dropAt({ kind: 'medal' }); victim.hasMedal = false; }
   for (const m of S.MATS) if (victim.mats[m] >= 20) dropAt({ kind: 'mats', m, amount: Math.min(100, Math.floor(victim.mats[m] / 2)) });
   const ammoDrop = (at, n) => { if (n >= 4) dropAt({ kind: 'ammo', at, count: Math.min(n, 20) }); };
   ammoDrop('light', victim.ammo.light); ammoDrop('medium', victim.ammo.medium);
@@ -1138,10 +1138,9 @@ function tryPickup(p, item, explicit) {
     return true;
   }
   if (def.kind === 'medal') {
-    if (p.slots.some(s => s && s.kind === 'medal')) return false;
-    const slot = p.slots.indexOf(null, 1);
-    if (slot === -1) return false;
-    p.slots[slot] = { kind: 'medal' };
+    // passive: no slot, one per player
+    if (p.hasMedal) return false;
+    p.hasMedal = true;
     return true;
   }
   if (def.kind === 'weapon') {
@@ -1241,8 +1240,7 @@ function dropSelected(p) {
   const s = curSlot(p);
   if (!s || p.sel === 0) return;
   const def = s.kind === 'weapon' ? { kind: 'weapon', w: s.w, r: s.r, ammo: 0, nm: s.nm }
-    : s.kind === 'consum' ? { kind: 'consum', c: s.c, count: s.count }
-    : s.kind === 'medal' ? { kind: 'medal' } : null;
+    : s.kind === 'consum' ? { kind: 'consum', c: s.c, count: s.count } : null;
   if (!def) return;
   p.slots[p.sel] = null;
   p.useT = 0;
@@ -1801,7 +1799,7 @@ function buildSnapshot() {
       p.team, wv, (Math.abs(p.input.mx) + Math.abs(p.input.my)) > 0.1 ? 1 : 0,
       p.useT > 0 ? 1 : 0, p.kills, p.ph, Math.round(p.alt * 100), p.outfit,
       p.kn ? 1 : 0, p.kn ? Math.ceil(p.knT) : 0, Math.round(Math.min(1, p.revT / S.KNOCK.revive) * 100),
-      p.head || 0, p.boss ? 1 : 0, p.slots.some(s => s && s.kind === 'medal') ? 1 : 0,
+      p.head || 0, p.boss ? 1 : 0, p.hasMedal ? 1 : 0,
     ]);
   }
   const st = G.storm;
@@ -1844,6 +1842,8 @@ function tick() {
         if (p.boss) { if (p.ph === S.PH.ground) bossThink(p, dt); }
         else if (p.bot) { if (p.ph === S.PH.ground) botThink(p, dt); else botAir(p, dt); }
         processPlayer(p, dt);
+        // medallion passive: shield regenerates up to its cap (never above a cap already exceeded)
+        if (p.hasMedal && !p.boss && p.shield < S.MEDAL.shieldCap) p.shield = Math.min(S.MEDAL.shieldCap, p.shield + S.MEDAL.regen * dt);
       }
       if (G.state === 'bus') {
         if (G.bus.t >= G.bus.dur) {
@@ -1893,13 +1893,12 @@ function tick() {
             if (!sl) return null;
             if (sl.kind === 'pickaxe') return { k: 'pick' };
             if (sl.kind === 'weapon') return { k: 'w', w: sl.w, r: sl.r, mag: sl.mag, nm: sl.nm };
-            if (sl.kind === 'medal') return { k: 'm' };
             return { k: 'c', c: sl.c, n: sl.count };
           });
           sendTo(c, {
             t: 'you',
             hp: Math.round(p.hp), sh: Math.round(p.shield),
-            mats: p.mats, ammo: p.ammo, slots: slotData, sel: p.sel, armor: p.armor || null,
+            mats: p.mats, ammo: p.ammo, slots: slotData, sel: p.sel, armor: p.armor || null, medal: !!p.hasMedal,
             reload: p.reloadT > 0 ? p.reloadT / p.reloadTotal : 0,
             use: p.useT > 0 ? 1 - p.useT / p.useTotal : 0,
             build: p.input.build, bmat: p.buildMat,
