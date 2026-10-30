@@ -2835,7 +2835,7 @@ const SET_ROWS = [
     desc: 'Adjusts the contrast of menus and the HUD so text is easier to read.' },
   { sec: 'Gameplay' },
   { key: 'autoPick', label: 'Auto pick up', opts: [false, true], fmt: v => v ? 'On' : 'Off',
-    desc: 'Off (default): walk over loot and press E to pick it up. On: loot is picked up as you walk over it, when you have a free slot.' },
+    desc: 'Off (default): ammo and materials are picked up as you walk over them; press E for weapons, consumables, armor and medallions. On: everything is picked up as you walk over it, when you have a free slot.' },
   { sec: 'Audio' },
   { key: 'sfxVolume', label: 'Sound effects', range: [0, 100, 5], fmt: v => v + '%',
     desc: 'Volume of gunshots, footsteps and other effects. 0% is silent.' },

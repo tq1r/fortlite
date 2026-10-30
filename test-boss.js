@@ -66,6 +66,23 @@ ok(e2 && e2[19] === 1, 'snapshot flags the medallion holder (index 19)');
 ok(e1 && e1[19] === 0, 'snapshot does not flag players without a medallion');
 ok(snap.p.filter(a => a[18] === 1).length === pois.length, 'snapshot flags every boss (index 18)');
 
+console.log('-- auto pickup');
+const hp = I.makePlayer(9010, 'Walker', 0, false);   // a human with auto pick left off (the default)
+G.players.push(hp);
+hp.x = 1000; hp.y = 1000;
+const ammoL = { id: 91001, x: 1000, y: 1000, kind: 'ammo', at: 'light', count: 10 };
+const matL = { id: 91002, x: 1005, y: 1000, kind: 'mats', m: 'wood', amount: 20 };
+const gunL = { id: 91003, x: 1002, y: 1000, kind: 'weapon', w: 0, r: 0, ammo: 0 };
+G.loot.set(ammoL.id, ammoL); G.loot.set(matL.id, matL); G.loot.set(gunL.id, gunL);
+I.autoPickup(hp);
+ok(hp.ammo.light === 10, 'ammo is picked up on walk-over with auto pick off');
+ok(hp.mats.wood === 20, 'materials are picked up on walk-over with auto pick off');
+ok(!hp.slots.some(s => s && s.kind === 'weapon'), 'a weapon still needs E with auto pick off');
+ok(!G.loot.has(ammoL.id) && !G.loot.has(matL.id) && G.loot.has(gunL.id), 'only the ammo and materials leave the ground');
+hp.client = { autoPick: true };
+I.autoPickup(hp);
+ok(hp.slots.some(s => s && s.kind === 'weapon'), 'with auto pick on the weapon is picked up too');
+
 console.log('-- bosses wait for the bus');
 G.state = 'bus';
 ok(!I.buildSnapshot().p.some(a => a[18] === 1), 'bosses are hidden from the snapshot while the bus flies');

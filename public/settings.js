@@ -11,7 +11,7 @@ const FL_SET_DEFAULTS = {
   uiContrast: 100,          // 80..140 (percent)
   sfxVolume: 100,           // 0..100
   showFps: false,
-  autoPick: false,          // pick up loot as you walk over it (off: press E)
+  autoPick: false,          // walk over everything to pick it up (off: ammo and materials auto, the rest needs E)
 };
 function loadSettings() {
   try { return { ...FL_SET_DEFAULTS, ...JSON.parse(localStorage.getItem('fl_settings') || '{}') }; }

@@ -1166,9 +1166,11 @@ function removeLoot(item) {
 
 function autoPickup(p) {
   if (p.boss) return;   // bosses hold their POI and never loot
-  // humans pick up by hand (E) unless they turned auto pick on in Settings; bots always auto pick
-  if (!p.bot && !(p.client && p.client.autoPick)) return;
+  // ammo and materials are picked up as you walk over them, for everyone. Weapons, consumables, armor and
+  // medallions need E unless the player turned auto pick on in Settings (bots always auto pick everything)
+  const everything = p.bot || !!(p.client && p.client.autoPick);
   for (const item of G.loot.values()) {
+    if (!everything && item.kind !== 'ammo' && item.kind !== 'mats') continue;
     if (S.dist2(p.x, p.y, item.x, item.y) > 38 * 38) continue;
     if (item.kind === 'weapon' && p.slots.indexOf(null, 1) === -1) continue; // need E to swap
     if (item.kind === 'consum') {
@@ -2026,7 +2028,7 @@ function keepalive() {
   }
 }
 
-return { acceptSocket, start, stop, clientCount: () => clients.size, stateName: () => G.state, ...(opts.debug ? { __internal: { G, S, makePlayer, damagePlayer, killPlayer, tryPickup, startMatch, tick, buildSnapshot, spawnBosses } } : {}) };
+return { acceptSocket, start, stop, clientCount: () => clients.size, stateName: () => G.state, ...(opts.debug ? { __internal: { G, S, makePlayer, damagePlayer, killPlayer, tryPickup, autoPickup, startMatch, tick, buildSnapshot, spawnBosses } } : {}) };
 }
 
 module.exports = { createGame };
