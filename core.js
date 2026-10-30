@@ -694,8 +694,8 @@ function bossThink(p, dt) {
   const off = S.dist(p.x, p.y, b.cx, b.cy);
   if (off > S.BOSS.leash) { inp.mx += (b.cx - p.x) / off * 1.2; inp.my += (b.cy - p.y) / off * 1.2; }
   // burst fire with short pauses, like a player tapping the trigger
-  if (b.pauseT > 0) { b.pauseT -= dt; inp.fire = false; if (b.pauseT <= 0) b.burstT = 0.7 + Math.random() * 0.5; }
-  else if (t) { inp.fire = true; b.burstT -= dt; if (b.burstT <= 0) b.pauseT = 0.8 + Math.random() * 0.5; }
+  if (b.pauseT > 0) { b.pauseT -= dt; inp.fire = false; if (b.pauseT <= 0) b.burstT = S.BOSS.burstS; }
+  else if (t) { inp.fire = true; b.burstT -= dt; if (b.burstT <= 0) b.pauseT = S.BOSS.pauseMin + Math.random() * (S.BOSS.pauseMax - S.BOSS.pauseMin); }
 }
 
 function startMatch() {
@@ -980,7 +980,7 @@ function tryFire(p) {
     G.bullets.push({
       x: mx, y: my,
       vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed,
-      dmg: w.dmg * mult, range: w.range, traveled: 0,
+      dmg: w.dmg * mult * (p.boss ? S.BOSS.dmgMult : 1), range: w.range, traveled: 0,
       owner: p.id, team: effTeam(p), wi: s.w,
     });
   }

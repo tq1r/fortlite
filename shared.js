@@ -99,7 +99,10 @@
   // medallion: a held item; whoever holds one shows on every map
   S.MEDAL = { name: 'Medallion', color: '#ffd23a' };
   // one boss per POI: red skin, heavy armor, a rifle; it holds its POI within the leash
-  S.BOSS = { hp: 600, weapon: 'ar', rarity: 3, armor: 'heavy', sight: 430, leash: 380, medalChance: 0.35 };
+  // dmgMult: share of its rifle damage (keeps it a fight, not a one-tap); burst/pause: fire rhythm;
+  // barRange: how close you must be before the boss health bar shows at the top of the screen
+  S.BOSS = { hp: 600, weapon: 'ar', rarity: 3, armor: 'heavy', sight: 360, leash: 380, medalChance: 0.35,
+    dmgMult: 0.6, burstS: 0.6, pauseMin: 1.2, pauseMax: 1.8, barRange: 600 };
 
   // ammo granted when the weapon is picked up
   S.WEAPON_PICKUP_AMMO = { light: 30, medium: 30, heavy: 6, shell: 8 };

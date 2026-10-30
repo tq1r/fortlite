@@ -335,6 +335,25 @@ function deserializeLoot(l) {
 }
 
 // snapshot: p: [id,x,y,aim,hp,shield,team,wv,moving,using,kills]
+// Boss health bar: the nearest boss within barRange of you, shown at the top of the screen
+function updateBossBar() {
+  const bar = $('bossBar');
+  let best = null, bd = S.BOSS.barRange;
+  if (mode === 'play' && me) {
+    for (const p of players.values()) {
+      if (!p.boss || !snapAlive.has(p.id) || !p.buf.length) continue;
+      const ip = interpPlayer(p, performance.now() - 120);
+      if (!ip) continue;
+      const d = Math.hypot(ip.x - me.x, ip.y - me.y);
+      if (d < bd) { bd = d; best = p; }
+    }
+  }
+  if (!best) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  bar.querySelector('.bbName').textContent = best.name;
+  bar.querySelector('.bbPct').textContent = Math.max(0, Math.ceil(best.hp)) + ' / ' + S.BOSS.hp;
+  bar.querySelector('.bbFill').style.width = (Math.max(0, Math.min(1, best.hp / S.BOSS.hp)) * 100).toFixed(1) + '%';
+}
 function onSnap(m) {
   matchTime = m.tm;
   aliveCount = m.alive;
@@ -361,6 +380,7 @@ function onSnap(m) {
   // dead players: drop their interpolation buffers so they stop rendering
   for (const [id, p] of players) if (!seen.has(id) && id !== myId) p.buf.length = 0;
   snapAlive = seen;
+  updateBossBar();
 }
 
 function onYou(m) {
@@ -653,6 +673,7 @@ $('pmAccount').onclick = () => { togglePause(false); openAcct('account'); };
 function leaveMatch() {
   pauseOpen = false;
   $('pauseMenu').classList.add('hidden');
+  $('bossBar').classList.add('hidden');
   const old = ws;
   ws = null; wsReady = false;
   clearTimeout(reconnectTimer); stopHeartbeat();
