@@ -22,12 +22,13 @@ function makeNode(tag) {
     append(...ns) { for (const n of ns) { this.children.push(n); } },
     prepend(...ns) { for (const n of ns.reverse()) this.children.unshift(n); },
     remove() { if (this.parentNode) { const i = this.parentNode.children.indexOf(this); if (i >= 0) this.parentNode.children.splice(i, 1); } },
-    querySelector() { return makeNode('span'); },
-    addEventListener() {}, removeEventListener() {},
+    querySelector(sel) { this._q = this._q || {}; if (!this._q[sel]) this._q[sel] = makeNode('span'); return this._q[sel]; },
+    addEventListener(t, fn) { this._l = this._l || {}; this._l[t] = fn; }, removeEventListener() {},
     click() { if (this.onclick) this.onclick(); },
     focus() {}, select() {},
     get lastChild() { return this.children[this.children.length - 1] || null; },
     get firstChild() { return this.children[0] || null; },
+    closest() { return this; },
   };
   Object.defineProperty(el, 'innerHTML', {
     get() { return this._innerHTML; },
@@ -63,7 +64,7 @@ const sandbox = {
   requestAnimationFrame: cb => { rafQueue.push(cb); return rafQueue.length; },
   innerWidth: 1280, innerHeight: 720,
   devicePixelRatio: 1,
-  addEventListener() {}, removeEventListener() {},
+  addEventListener(t, fn) { if (t === 'keydown') sandbox._keydown = fn; }, removeEventListener() {},
   localStorage: { _d: {}, getItem(k) { return this._d[k] || null; }, setItem(k, v) { this._d[k] = String(v); } },
   navigator: {},
   Image: function FakeImage() { this.complete = false; this.naturalWidth = 0; this.src = ''; },
@@ -239,6 +240,33 @@ try {
   deliver({ t: 'ev', k: 'lootAdd', l: { i: 62, x: 1040, y: 1000, k: 'medal' } });
   frames(12);
   ok(true, 'boss, medallion holder, armor and medallion render without errors');
+
+  // inventory: a Mythic rifle in hotbar slot 4, the GEAR row, and hover tooltips
+  deliver({
+    t: 'you', hp: 100, sh: 0, armor: 'heavy',
+    mats: { wood: 0, stone: 0, metal: 0 }, ammo: { light: 0, medium: 30, heavy: 0, shell: 0 },
+    slots: [{ k: 'pick' }, { k: 'm' }, { k: 'c', c: 'medkit', n: 2 }, { k: 'w', w: 3, r: 5, mag: 30, nm: "Warden's Rifle" }, null],
+    sel: 0, reload: 0, use: 0, build: false, bmat: 'wood', alive: true, kills: 0, place: 0,
+  });
+  sandbox._keydown({ code: 'KeyI', repeat: false, preventDefault() {} });
+  const gt = id => sandbox.document.getElementById(id);
+  const gear = gt('invGear'), hot = gt('invHot'), tip = gt('invTip'), panel = gt('invPanel');
+  const tipText = () => tip.querySelector('span').textContent;
+  const hover = el => panel._l.mousemove({ target: el, clientX: 40, clientY: 40 });
+  ok(!panel.classList.contains('hidden') && gear.children.length === 2, 'I opens the inventory with a GEAR row (armor + medallion)');
+  hover(gear.children[1]);
+  ok(!tip.classList.contains('hidden') && tip.querySelector('b').textContent === 'Medallion', 'hovering the medallion shows its tooltip');
+  ok(tipText().includes('15%'), 'medallion tooltip states the 15% damage cut');
+  hover(hot.children[3]);
+  ok(tip.querySelector('b').textContent === "Warden's Rifle" && tipText().includes('51 damage'), "Warden's Rifle tooltip: its name and 51 damage (30 x 1.7)");
+  hover(gear.children[0]);
+  ok(tipText().includes('35%') || tipText().includes('Armor'), 'armor tooltip shows (heavy armor)');
+  hover(panel);
+  ok(tip.classList.contains('hidden'), 'tooltip hides when the pointer is off the tiles');
+  sandbox._keydown({ code: 'KeyI', repeat: false, preventDefault() {} });
+  ok(panel.classList.contains('hidden'), 'I closes the inventory again');
+  frames(3);
+  ok(true, 'inventory with mythic, GEAR row and tooltips renders without errors');
 
   // events galore
   const evs = [

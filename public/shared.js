@@ -86,6 +86,8 @@
     { name: 'Rare',      mult: 1.20, color: '#37a8ff' },
     { name: 'Epic',      mult: 1.32, color: '#b45bf2' },
     { name: 'Legendary', mult: 1.45, color: '#ffa93a' },
+    // Mythic (index 5) is only ever dropped by bosses: no random loot roll reaches it
+    { name: 'Mythic',    mult: 1.7,  color: '#ff4fd8' },
   ];
 
   // chest tiers, decided when the match is generated (before anyone can see or open them).
@@ -97,7 +99,10 @@
     heavy: { name: 'Heavy Armor', red: 0.35, rank: 2, color: '#b58cff' },
   };
   // medallion: a held item; whoever holds one shows on every map
-  S.MEDAL = { name: 'Medallion', color: '#ffd23a' };
+  S.MEDAL = { name: 'Medallion', color: '#ffd23a', red: 0.15,
+    desc: 'Holding it reveals you on every map and cuts the damage you take by 15%.' };
+  // the boss drop: one guaranteed Mythic rifle per boss (r = the Mythic rank)
+  S.MYTHIC = { name: "Warden's Rifle", w: 'ar', r: 5 };
   // one boss per POI: red skin, heavy armor, a rifle; it holds its POI within the leash
   // dmgMult: share of its rifle damage (keeps it a fight, not a one-tap); burst/pause: fire rhythm;
   // barRange: how close you must be before the boss health bar shows at the top of the screen

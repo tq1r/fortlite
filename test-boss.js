@@ -108,6 +108,15 @@ for (let i = 0; i < 60; i++) {
 ok(bossShots > 0, `boss fires at a fighter in sight (${bossShots} shots from boss 0)`);
 ok(fighter.hp < 100000, 'the fighter takes boss damage');
 
+console.log('-- medallion damage');
+const hm = I.makePlayer(9003, 'Medal', 0, false);
+G.players.push(hm);
+hm.x = bosses[0].boss.cx + 500; hm.y = bosses[0].boss.cy + 500; hm.hp = 100;
+I.tryPickup(hm, { kind: 'medal' });
+I.damagePlayer(hm, 100, null, 'test');
+ok(Math.abs(hm.hp - 15) < 1e-6, `medallion cuts 100 damage by 15%: 85 taken, hp ${hm.hp.toFixed(1)}`);
+G.players.splice(G.players.indexOf(hm), 1);
+
 console.log('-- drops');
 const before = G.loot.size;
 const acBefore = G.aliveCount;
@@ -117,7 +126,10 @@ try { I.killPlayer(b0, null, 'test'); } finally { Math.random = realRandom; }
 const drops = [...G.loot.values()].slice(before);
 ok(drops.some(l => l.kind === 'armor' && l.tier === 'heavy'), 'boss drops its heavy armor');
 ok(drops.some(l => l.kind === 'medal'), 'boss drops a medallion on a successful roll');
-ok(drops.some(l => l.kind === 'weapon' && l.w === S.WIDX[S.BOSS.weapon]), 'boss drops its rifle');
+const mythic = drops.find(l => l.kind === 'weapon' && l.r === S.MYTHIC.r);
+ok(mythic && mythic.w === S.WIDX[S.BOSS.weapon] && mythic.nm === S.MYTHIC.name, "boss drops Warden's Rifle, the Mythic rifle");
+ok(!drops.some(l => l.kind === 'weapon' && l.r !== S.MYTHIC.r), 'boss drops no ordinary weapon');
+ok([...G.loot.values()].every(l => l.kind !== 'weapon' || l.r < S.MYTHIC.r || l.nm === S.MYTHIC.name), 'only boss drops ever carry the Mythic rank');
 ok(G.aliveCount === acBefore, 'boss death leaves aliveCount alone');
 ok(!b0.alive, 'dead boss is out of play');
 

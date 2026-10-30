@@ -425,6 +425,7 @@ function dmgNum(x, y, n, color) {
 
 function onEv(e) {
   switch (e.k) {
+    case 'mythic': banner('MYTHIC DROPPED: ' + e.name + ' has fallen', '#ff4fd8', 5); break;
     case 'shot': {
       if (e.id === myId) break;   // our own shot was already drawn by predictShot
       const w = S.WEAPONS[e.w];
@@ -837,6 +838,57 @@ function handleInvKey(c) {
   if (c === 'ArrowRight') { invSel = (invSel + 1) % 5; renderInv(); return; }
   if (c === 'ArrowLeft') { invSel = (invSel + 4) % 5; renderInv(); return; }
 }
+// What an item is and what it does. Used by the description panel and the hover tooltip.
+function invInfo(s) {
+  if (!s) return { t: 'Empty', b: 'Nothing in this slot.' };
+  if (s.k === 'pick') return { t: 'Pickaxe', b: 'Harvests wood, stone and metal from trees and rocks. Fire to swing. E to hold, G to drop.' };
+  if (s.k === 'w') {
+    const w = S.WEAPONS[s.w], r = S.RARITY[s.r];
+    const dmg = Math.round(w.dmg * r.mult), extra = Math.round((r.mult - 1) * 100);
+    const mythic = s.r === S.MYTHIC.r;
+    return { t: invName(s), b: (mythic ? 'MYTHIC. Dropped only by bosses. ' : '') + dmg + ' damage per bullet (+' + extra + '% over a common ' + w.name + '). Magazine ' + (s.mag == null ? w.mag : s.mag) + '. E to hold, G to drop.' };
+  }
+  if (s.k === 'm') return { t: S.MEDAL.name, b: S.MEDAL.desc + ' E to hold, G to drop.' };
+  return { t: S.CONSUM[s.c].name, b: 'Use it from the hotbar to heal or add shield. E to hold, G to drop.' };
+}
+// Tooltip: follows the pointer over any element that carries a tip (set when the tile is built)
+function invTipUpdate(e) {
+  const tip = $('invTip');
+  const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (!el || !el._tip) { tip.classList.add('hidden'); return; }
+  tip.querySelector('b').textContent = el._tip.t;
+  tip.querySelector('span').textContent = el._tip.b;
+  tip.classList.remove('hidden');
+  tip.style.left = Math.min(window.innerWidth - 310, e.clientX + 16) + 'px';
+  tip.style.top = Math.min(window.innerHeight - 120, e.clientY + 16) + 'px';
+}
+$('invPanel').addEventListener('mousemove', invTipUpdate);
+$('invPanel').addEventListener('mouseleave', () => $('invTip').classList.add('hidden'));
+function armorIcon(col) {
+  return '<svg viewBox="0 0 40 40" width="34" height="34"><path d="M8 9 L20 5 L32 9 L32 22 Q32 31 20 36 Q8 31 8 22 Z" fill="' + col + '" stroke="#1d2330" stroke-width="2"/><path d="M14 16 L26 16" stroke="rgba(255,255,255,.5)" stroke-width="2"/></svg>';
+}
+// GEAR row: armor and the medallion, always shown so you can see what you have (hover for details)
+function gearTile(kind) {
+  const d = document.createElement('div');
+  const ic = document.createElement('div'); ic.className = 'invIc';
+  let has;
+  if (kind === 'armor') {
+    has = !!you.armor;
+    ic.innerHTML = armorIcon(has ? S.ARMOR[you.armor].color : '#9aa0aa');
+    d._tip = has
+      ? { t: S.ARMOR[you.armor].name, b: 'Cuts incoming damage by ' + Math.round(S.ARMOR[you.armor].red * 100) + '%. A heavier piece replaces the one you wear. Dropped by bosses and by players you defeat.' }
+      : { t: 'No armor', b: 'Armor cuts incoming damage: light by 20%, heavy by 35%. Dropped by bosses and by players you defeat.' };
+  } else {
+    has = (you.slots || []).some(s => s && s.k === 'm');
+    ic.innerHTML = has ? MEDAL_ICON : '';
+    d._tip = has ? invInfo({ k: 'm' })
+      : { t: 'No medallion', b: S.MEDAL.desc + ' Dropped only by bosses (' + Math.round(S.BOSS.medalChance * 100) + '% chance).' };
+  }
+  d.className = 'invTile' + (has ? '' : ' empty');
+  d.dataset.tip = '1';
+  d.append(ic);
+  return d;
+}
 function invIcon(s) {
   if (!s) return '';
   if (s.k === 'pick') return SVGI.pick;
@@ -847,7 +899,7 @@ function invIcon(s) {
 function invName(s) {
   if (!s) return 'Empty';
   if (s.k === 'pick') return 'Pickaxe';
-  if (s.k === 'w') return S.RARITY[s.r].name + ' ' + S.WEAPONS[s.w].name;
+  if (s.k === 'w') return s.nm || (S.RARITY[s.r].name + ' ' + S.WEAPONS[s.w].name);
   if (s.k === 'm') return S.MEDAL.name;
   return S.CONSUM[s.c].name;
 }
@@ -865,6 +917,8 @@ function invTile(i) {
     bar.style.background = s.k === 'w' ? S.RARITY[s.r].color : s.k === 'm' ? S.MEDAL.color : (s.k === 'c' ? S.CONSUM[s.c].color : 'transparent');
     d.append(bar);
   }
+  d._tip = invInfo(s);
+  d.dataset.tip = '1';
   d.onclick = () => { invSel = i; if (invUsable(i)) selectSlot(i); renderInv(); };
   return d;
 }
@@ -880,6 +934,8 @@ function renderInv() {
   hot.innerHTML = '';
   for (let i = 0; i < 5; i++) hot.append(invTile(i));
   wpn.innerHTML = '';
+  const gear = $('invGear'); gear.innerHTML = '';
+  gear.append(gearTile('armor'), gearTile('medal'));
   let any = false;
   for (let i = 0; i < 5; i++) { const s = you.slots[i]; if (s && s.k === 'w') { any = true; wpn.append(invTile(i)); } }
   if (!any) wpn.innerHTML = '<div class="invNone">No weapons. Find some in chests and on the ground.</div>';
@@ -890,10 +946,9 @@ function renderInv() {
   res.append(invChip('ARMOR', arm ? arm.name.replace(' Armor', '') + ' -' + Math.round(arm.red * 100) + '%' : 'None'));
   const s = you.slots[invSel];
   desc.innerHTML = '';
-  const t = document.createElement('div'); t.className = 'invDescT'; t.textContent = invName(s);
-  const b = document.createElement('div'); b.className = 'invDescB';
-  b.textContent = !s ? 'EMPTY' : s.k === 'w' ? 'Magazine ' + s.mag + '. Press E to hold, G to drop.'
-    : s.k === 'm' ? 'Shows your position on every map while you hold it. G to drop.' : 'Press E to hold, G to drop.';
+  const info = invInfo(s);
+  const t = document.createElement('div'); t.className = 'invDescT'; t.textContent = info.t;
+  const b = document.createElement('div'); b.className = 'invDescB'; b.textContent = info.b;
   desc.append(t, b);
 }
 $('invOptHold').onclick = () => { invHold(); setInv(false); };
@@ -922,7 +977,7 @@ function updateHUD() {
       else if (s.k === 'w') {
         if (icon.dataset.k !== 'w' + s.w) { icon.innerHTML = '<img class="gunImg" alt="" src="assets/guns/' + S.WEAPONS[s.w].id + '.png">'; icon.dataset.k = 'w' + s.w; }
         cnt.textContent = s.mag;
-        nm.textContent = S.RARITY[s.r].name + ' ' + S.WEAPONS[s.w].name;
+        nm.textContent = s.nm || (S.RARITY[s.r].name + ' ' + S.WEAPONS[s.w].name);
         rar.style.background = S.RARITY[s.r].color;
       } else if (s.k === 'm') {
         icon.innerHTML = MEDAL_ICON; icon.dataset.k = 'm'; cnt.textContent = '';
@@ -1511,6 +1566,11 @@ function drawLoot(g, l, bob) {
     g.strokeStyle = col; g.lineWidth = 2.5;
     g.beginPath(); g.arc(x, y, 18, 0, TAU); g.stroke();
     g.save(); g.translate(x, y); g.rotate(-0.5);
+    if (l.r === S.MYTHIC.r) {
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 180);
+      g.strokeStyle = 'rgba(255,79,216,' + (0.4 + 0.6 * pulse).toFixed(2) + ')'; g.lineWidth = 3;
+      g.beginPath(); g.arc(x, y, 22 + pulse * 6, 0, TAU); g.stroke();
+    }
     drawGunSprite(g, l.w, false, 42, true);
     g.restore();
   } else if (l.kind === 'ammo') {

@@ -478,7 +478,7 @@ function startMsg(forClient) {
   };
 }
 function serializeLoot(l) {
-  return { i: l.id, x: Math.round(l.x), y: Math.round(l.y), k: l.kind, w: l.w, r: l.r, c: l.c, n: l.count, m: l.m, a: l.amount, at: l.at, am: l.ammo, t: l.tier };
+  return { i: l.id, x: Math.round(l.x), y: Math.round(l.y), k: l.kind, w: l.w, r: l.r, c: l.c, n: l.count, m: l.m, a: l.amount, at: l.at, am: l.ammo, t: l.tier, nm: l.nm };
 }
 
 // ============================================================
@@ -834,6 +834,7 @@ function damagePlayer(victim, amount, attacker, cause) {
     return;
   }
   let dmg = victim.armor ? amount * (1 - S.ARMOR[victim.armor].red) : amount;
+  if (victim.slots.some(s => s && s.kind === 'medal')) dmg *= 1 - S.MEDAL.red;
   if (victim.shield > 0) {
     const absorbed = Math.min(victim.shield, dmg);
     victim.shield -= absorbed; dmg -= absorbed;
@@ -908,7 +909,7 @@ function killPlayer(victim, attacker, cause) {
   for (let i = 1; i < 5; i++) {
     const s = victim.slots[i];
     if (!s) continue;
-    if (s.kind === 'weapon') dropAt({ kind: 'weapon', w: s.w, r: s.r, ammo: 0 });
+    if (s.kind === 'weapon' && !victim.boss) dropAt({ kind: 'weapon', w: s.w, r: s.r, ammo: 0, nm: s.nm });
     else if (s.kind === 'consum') dropAt({ kind: 'consum', c: s.c, count: s.count });
     else if (s.kind === 'medal') dropAt({ kind: 'medal' });
   }
@@ -918,6 +919,12 @@ function killPlayer(victim, attacker, cause) {
   ammoDrop('heavy', victim.ammo.heavy); ammoDrop('shell', victim.ammo.shell);
   if (victim.armor) dropAt({ kind: 'armor', tier: victim.armor });
   if (victim.boss && Math.random() < S.BOSS.medalChance) dropAt({ kind: 'medal' });
+  if (victim.boss) {
+    // every boss drops its Mythic rifle; the whole server hears about it
+    const wi = S.WIDX[S.MYTHIC.w];
+    dropAt({ kind: 'weapon', w: wi, r: S.MYTHIC.r, ammo: ammoForWeapon(wi), nm: S.MYTHIC.name });
+    ev({ k: 'mythic', name: victim.name });
+  }
 
   if (attacker && attacker !== victim) attacker.kills++;
   const kname = attacker ? attacker.name : (cause === 'left' ? 'Disconnected' : 'The Fade');
@@ -1144,15 +1151,15 @@ function tryPickup(p, item, explicit) {
       // swap with selected
       const old = p.slots[p.sel];
       const dropDef = old.kind === 'weapon'
-        ? { kind: 'weapon', w: old.w, r: old.r, ammo: 0 }
+        ? { kind: 'weapon', w: old.w, r: old.r, ammo: 0, nm: old.nm }
         : { kind: 'consum', c: old.c, count: old.count };
       const dropped = spawnLoot(p.x + (Math.random() - 0.5) * 30, p.y + (Math.random() - 0.5) * 30, dropDef);
       ev({ k: 'lootAdd', l: serializeLoot(dropped) });
-      p.slots[p.sel] = { kind: 'weapon', w: def.w, r: def.r, mag: S.WEAPONS[def.w].mag };
+      p.slots[p.sel] = { kind: 'weapon', w: def.w, r: def.r, mag: S.WEAPONS[def.w].mag, nm: def.nm };
       if (def.ammo) p.ammo[S.WEAPONS[def.w].ammo] = Math.min(S.AMMO_MAX[S.WEAPONS[def.w].ammo], p.ammo[S.WEAPONS[def.w].ammo] + def.ammo);
       return true;
     }
-    p.slots[empty] = { kind: 'weapon', w: def.w, r: def.r, mag: S.WEAPONS[def.w].mag };
+    p.slots[empty] = { kind: 'weapon', w: def.w, r: def.r, mag: S.WEAPONS[def.w].mag, nm: def.nm };
     if (def.ammo) p.ammo[S.WEAPONS[def.w].ammo] = Math.min(S.AMMO_MAX[S.WEAPONS[def.w].ammo], p.ammo[S.WEAPONS[def.w].ammo] + def.ammo);
     return true;
   }
@@ -1233,7 +1240,7 @@ function interact(p) {
 function dropSelected(p) {
   const s = curSlot(p);
   if (!s || p.sel === 0) return;
-  const def = s.kind === 'weapon' ? { kind: 'weapon', w: s.w, r: s.r, ammo: 0 }
+  const def = s.kind === 'weapon' ? { kind: 'weapon', w: s.w, r: s.r, ammo: 0, nm: s.nm }
     : s.kind === 'consum' ? { kind: 'consum', c: s.c, count: s.count }
     : s.kind === 'medal' ? { kind: 'medal' } : null;
   if (!def) return;
@@ -1885,7 +1892,7 @@ function tick() {
           const slotData = p.slots.map((sl, i) => {
             if (!sl) return null;
             if (sl.kind === 'pickaxe') return { k: 'pick' };
-            if (sl.kind === 'weapon') return { k: 'w', w: sl.w, r: sl.r, mag: sl.mag };
+            if (sl.kind === 'weapon') return { k: 'w', w: sl.w, r: sl.r, mag: sl.mag, nm: sl.nm };
             if (sl.kind === 'medal') return { k: 'm' };
             return { k: 'c', c: sl.c, n: sl.count };
           });
